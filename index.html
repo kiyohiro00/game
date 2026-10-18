@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GAME ARCHIVE</title>
+<meta name="description" content="ブラウザで遊べる自作ゲームのコレクション">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Shippori+Mincho+B1:wght@500;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+:root{
+  --bg:#07090f; --bg2:#0d1220; --ink:#efe5cb; --muted:#97a0b6; --gold:#c9a45c; --gold-hi:#f2d99c; --line:rgba(201,164,92,.35);
+  --f-display:"Shippori Mincho B1","Hiragino Mincho ProN","Yu Mincho",serif;
+  --f-body:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+  --f-latin:"Cinzel","Times New Roman",serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{background:var(--bg)}
+body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 20% -10%,#1a2447 0,transparent 55%),radial-gradient(ellipse at 100% 0,#3a1b3a 0,transparent 45%),var(--bg);color:var(--ink);font-family:var(--f-body);line-height:1.7;
+  padding-block:max(40px,env(safe-area-inset-top,0px)) max(56px,env(safe-area-inset-bottom,0px));
+  padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1040px;margin:0 auto}
+header{padding-bottom:28px;border-bottom:1px solid var(--line);margin-bottom:36px}
+.eyebrow{font-family:var(--f-latin);letter-spacing:.4em;font-size:12px;color:var(--gold)}
+h1{margin:6px 0 4px;font-family:var(--f-latin);font-weight:700;font-size:clamp(34px,7vw,64px);letter-spacing:.14em;line-height:1.1;background:linear-gradient(180deg,#fff7e0,#e2bd6a 65%,#9a6a26);-webkit-background-clip:text;background-clip:text;color:transparent}
+.lead{margin:0;color:var(--muted);font-size:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:22px}
+.card{display:flex;flex-direction:column;min-width:0;text-decoration:none;color:inherit;background:linear-gradient(180deg,rgba(26,33,54,.9),rgba(10,13,23,.9));border:1px solid var(--line);border-radius:3px;overflow:hidden;transition:transform .2s,border-color .2s,box-shadow .2s}
+.card:hover,.card:focus-visible{transform:translateY(-3px);border-color:var(--gold-hi);box-shadow:0 14px 36px rgba(0,0,0,.5),0 0 0 1px rgba(242,217,156,.2);outline:none}
+.thumb{aspect-ratio:16/9;background:#0a0d18 center/cover no-repeat;border-bottom:1px solid var(--line)}
+.body{padding:16px 18px 18px;display:flex;flex-direction:column;gap:6px;flex:1}
+.title{font-family:var(--f-display);font-weight:800;font-size:22px;letter-spacing:.06em;line-height:1.25}
+.genre{font-size:12px;color:var(--gold);letter-spacing:.08em}
+.desc{margin:0;font-size:13.5px;color:#cfc8b6}
+.meta{margin-top:auto;padding-top:10px;display:flex;flex-wrap:wrap;gap:6px}
+.tag{font-size:11.5px;padding:1px 8px;border:1px solid var(--line);border-radius:2px;color:var(--muted)}
+.play{margin-top:8px;font-family:var(--f-display);font-weight:800;letter-spacing:.2em;color:var(--gold-hi);font-size:15px}
+.play::after{content:" →"}
+.empty{border:1px dashed var(--line);border-radius:3px;padding:26px;color:var(--muted);font-size:13.5px;display:flex;align-items:center;justify-content:center;text-align:center;min-height:200px}
+footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
+@media (prefers-reduced-motion:reduce){.card{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">BROWSER GAMES</div>
+    <h1>GAME ARCHIVE</h1>
+    <p class="lead">ブラウザで遊べる自作ゲームのコレクション。インストール不要で、そのまま開いて遊べます。</p>
+  </header>
+  <main>
+    <div class="grid" id="grid"></div>
+  </main>
+  <footer>
+    <span id="count"></span> ／ スマホ・PC対応 ／ 音が鳴る作品があります
+  </footer>
+</div>
+<script>
+// 作品を追加するときは、この配列に1件足すだけです。
+const GAMES = [
+  {
+    path: 'souen/',
+    title: '蒼焔戦記',
+    genre: '戦略シミュレーションRPG',
+    desc: '辺境騎士団の若き団長リオネルが、帝国に奪われた城塞を取り戻す。全2章。三すくみ・地形・追撃のあるターン制バトルと、必殺のカットイン演出。',
+    tags: ['全2章', '約30〜40分', 'PC / スマホ', '音あり'],
+    thumb: 'souen/thumb.jpg'
+  }
+];
+const grid = document.getElementById('grid');
+for (const g of GAMES) {
+  const a = document.createElement('a');
+  a.className = 'card'; a.href = g.path;
+  const th = document.createElement('div'); th.className = 'thumb';
+  if (g.thumb) th.style.backgroundImage = 'url("' + g.thumb + '")';
+  const body = document.createElement('div'); body.className = 'body';
+  const mk = (cls, text) => { const d = document.createElement('div'); d.className = cls; d.textContent = text; return d; };
+  body.append(mk('genre', g.genre), mk('title', g.title));
+  const p = document.createElement('p'); p.className = 'desc'; p.textContent = g.desc; body.append(p);
+  const meta = document.createElement('div'); meta.className = 'meta';
+  for (const t of g.tags || []) meta.append(mk('tag', t));
+  body.append(meta, mk('play', '遊ぶ'));
+  a.append(th, body); grid.append(a);
+}
+const e = document.createElement('div'); e.className = 'empty'; e.textContent = '次の作品は準備中です'; grid.append(e);
+document.getElementById('count').textContent = GAMES.length + ' 作品';
+</script>
+</body>
+</html>

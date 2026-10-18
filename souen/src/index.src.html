@@ -1,0 +1,262 @@
+<title>蒼焔戦記</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Shippori+Mincho+B1:wght@500;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: one full-bleed canvas world; gilded steel panels float at the screen edges, moving away from the cursor. */
+:root{
+  --ink:#07090f; --steel:#141a2a; --steel-2:#0b0f1a; --gold:#c9a45c; --gold-hi:#f2d99c; --parch:#efe5cb; --muted:#97a0b6;
+  --blue:#4f88dc; --red:#d6574b; --green:#72d24c; --violet:#a35ad8;
+  --f-display:"Shippori Mincho B1","Hiragino Mincho ProN","Yu Mincho",serif;
+  --f-body:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+  --f-latin:"Cinzel","Times New Roman",serif;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;background:var(--ink);color:var(--parch);overflow:hidden;font-family:var(--f-body);-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:none}
+#app{position:fixed;inset:0;overflow:hidden}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:pointer}
+button{font:inherit;color:inherit}
+.panel{position:absolute;background:linear-gradient(180deg,rgba(26,33,54,.93),rgba(10,13,23,.93));border:1px solid rgba(201,164,92,.55);border-radius:3px;box-shadow:0 10px 30px rgba(0,0,0,.45),inset 0 0 0 1px rgba(255,255,255,.04),inset 0 1px 0 rgba(242,217,156,.18);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.panel::before,.panel::after{content:"";position:absolute;width:7px;height:7px;background:var(--gold);transform:rotate(45deg);top:-4px;left:10px;box-shadow:0 0 6px rgba(242,217,156,.6)}
+.panel::after{left:auto;right:10px}
+.lab{font-family:var(--f-latin);font-size:11px;letter-spacing:.12em;color:var(--gold)}
+
+/* unit panel */
+#unitPanel{display:flex;gap:10px;align-items:center;padding:9px 14px 9px 9px;min-width:220px;transition:top .25s,bottom .25s,left .25s,opacity .2s}
+#unitPanel canvas{width:58px;height:58px;border-radius:2px;border:1px solid rgba(201,164,92,.4)}
+.up-name{font-family:var(--f-display);font-weight:700;font-size:18px;line-height:1.1}
+.up-class{font-size:11.5px;color:var(--muted);margin-top:2px}
+.up-hp{display:flex;align-items:center;gap:7px;margin-top:5px}
+.up-hp .num{font-family:var(--f-latin);font-weight:700;font-size:15px;font-variant-numeric:tabular-nums;min-width:52px}
+.bar{position:relative;height:6px;background:rgba(0,0,0,.55);border-radius:3px;overflow:hidden;flex:1;min-width:70px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+.bar i{position:absolute;inset:0 auto 0 0;background:linear-gradient(180deg,#d8ff9a,#5fbf3a);border-radius:3px;transition:width .3s}
+#unitPanel.enemy{background:linear-gradient(180deg,rgba(64,20,26,.93),rgba(22,8,12,.93))}
+#unitPanel.player{background:linear-gradient(180deg,rgba(22,38,74,.93),rgba(8,13,28,.93))}
+
+/* terrain panel */
+#terrainPanel{padding:9px 14px;min-width:104px;text-align:left;transition:top .25s,bottom .25s,right .25s}
+.tp-name{font-family:var(--f-display);font-weight:700;font-size:17px;margin-bottom:3px}
+.tp-row{display:flex;justify-content:space-between;gap:14px;font-size:12px;color:var(--muted)}
+.tp-row b{font-family:var(--f-latin);color:var(--parch);font-variant-numeric:tabular-nums}
+
+/* goal */
+#goalPanel{top:calc(env(safe-area-inset-top,0px) + 12px);right:calc(env(safe-area-inset-right,0px) + 12px);padding:8px 14px;text-align:right;max-width:46vw}
+.gp-turn{font-family:var(--f-latin);font-size:12px;letter-spacing:.16em;color:var(--gold)}
+.gp-turn b{font-size:18px;color:var(--gold-hi);margin-left:4px}
+.gp-goal{font-family:var(--f-display);font-size:13.5px;margin-top:1px}
+
+/* menus */
+.menu{position:absolute;display:flex;flex-direction:column;padding:8px 6px;min-width:150px;z-index:20}
+.mi{display:flex;align-items:baseline;justify-content:space-between;gap:16px;background:none;border:0;padding:8px 14px 8px 26px;text-align:left;font-family:var(--f-display);font-weight:700;font-size:17px;cursor:pointer;position:relative;border-radius:2px;color:var(--parch)}
+.mi small{font-family:var(--f-body);font-weight:500;font-size:11.5px;color:var(--muted)}
+.mi.on{background:linear-gradient(90deg,rgba(201,164,92,.32),rgba(201,164,92,.04));color:#fff}
+.mi.on::before{content:"";position:absolute;left:9px;top:50%;width:8px;height:8px;margin-top:-4px;background:var(--gold-hi);transform:rotate(45deg);box-shadow:0 0 8px var(--gold)}
+.mi:disabled{opacity:.35;cursor:default}
+.mi:focus-visible{outline:1px solid var(--gold-hi)}
+
+/* forecast */
+#forecast{top:calc(env(safe-area-inset-top,0px) + 12px);left:50%;transform:translateX(-50%);padding:10px 12px 12px;width:min(420px,calc(100vw - 32px));z-index:15}
+.fc-head{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin-bottom:8px}
+.fc-side{min-width:0}
+.fc-side.r{text-align:right}
+.fc-name{font-family:var(--f-display);font-weight:700;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fc-w{font-size:12px;color:var(--muted);display:flex;gap:4px;align-items:center}
+.fc-side.r .fc-w{justify-content:flex-end}
+.fc-w .tri{font-family:var(--f-latin);font-weight:700}
+.tri.up{color:#7fe07a}.tri.down{color:#ff7a6a}
+.fc-vs{font-family:var(--f-latin);color:var(--gold);font-size:13px;letter-spacing:.1em}
+.fc-rows{display:grid;grid-template-columns:1fr auto 1fr;row-gap:3px;column-gap:10px;align-items:center}
+.fc-rows .v{font-family:var(--f-latin);font-weight:700;font-size:18px;font-variant-numeric:tabular-nums}
+.fc-rows .v.l{text-align:right}.fc-rows .k{font-size:11.5px;color:var(--gold);text-align:center;letter-spacing:.1em;min-width:44px}
+.x2{font-size:11px;color:var(--gold-hi);margin-left:3px}
+.fc-player .fc-name{color:#bcd6ff}.fc-enemy .fc-name{color:#ffbcb4}
+.fc-hpbar{height:4px;margin-top:5px}
+.fc-wbtn{background:rgba(255,255,255,.06);border:1px solid rgba(201,164,92,.4);border-radius:2px;padding:0 6px;cursor:pointer;font-size:11px;color:var(--gold-hi)}
+.fc-tip{margin-top:9px;font-size:11px;color:var(--muted);text-align:center}
+.fc-heal .v{color:#9cf0b8}
+
+/* toolbar */
+#toolbar{position:absolute;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);display:flex;gap:6px;z-index:12}
+.tb{background:linear-gradient(180deg,rgba(26,33,54,.92),rgba(10,13,23,.92));border:1px solid rgba(201,164,92,.5);border-radius:3px;padding:7px 11px;font-family:var(--f-display);font-weight:700;font-size:13px;cursor:pointer;color:var(--parch);min-width:40px}
+.tb:hover{border-color:var(--gold-hi);color:#fff}
+.tb.on{background:linear-gradient(180deg,rgba(120,40,120,.6),rgba(50,14,50,.8));border-color:#d58ad8}
+.tb:focus-visible{outline:1px solid var(--gold-hi)}
+
+/* banner */
+#banner{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:40}
+.b-band{width:100%;padding:22px 0;text-align:center;position:relative;animation:band 1.7s cubic-bezier(.2,.8,.2,1) forwards;overflow:hidden}
+.b-band.player{background:linear-gradient(90deg,transparent,rgba(30,70,150,.85) 18%,rgba(30,70,150,.85) 82%,transparent)}
+.b-band.enemy{background:linear-gradient(90deg,transparent,rgba(150,26,30,.85) 18%,rgba(150,26,30,.85) 82%,transparent)}
+.b-band.gold{background:linear-gradient(90deg,transparent,rgba(120,86,24,.85) 18%,rgba(120,86,24,.85) 82%,transparent)}
+.b-band::before,.b-band::after{content:"";position:absolute;left:10%;right:10%;height:1px;background:linear-gradient(90deg,transparent,var(--gold-hi),transparent)}
+.b-band::before{top:6px}.b-band::after{bottom:6px}
+.b-en{display:block;font-family:var(--f-latin);font-weight:700;font-size:clamp(30px,6vw,64px);letter-spacing:.18em;color:#fff;text-shadow:0 2px 0 rgba(0,0,0,.4),0 0 24px rgba(255,255,255,.35);animation:bt 1.7s cubic-bezier(.2,.8,.2,1) forwards}
+.b-jp{display:block;font-family:var(--f-display);font-size:clamp(13px,1.8vw,18px);letter-spacing:.4em;color:var(--gold-hi);margin-top:4px}
+@keyframes band{0%{transform:scaleY(0);opacity:0}12%{transform:scaleY(1);opacity:1}82%{transform:scaleY(1);opacity:1}100%{transform:scaleY(0);opacity:0}}
+@keyframes bt{0%{transform:translateX(40vw);opacity:0;letter-spacing:.5em}18%{transform:translateX(0);opacity:1;letter-spacing:.18em}80%{transform:translateX(0);opacity:1}100%{transform:translateX(-40vw);opacity:0}}
+
+/* dialogue */
+#dialog{position:absolute;left:0;right:0;bottom:0;padding:0 max(16px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 16px) max(16px,env(safe-area-inset-left,0px));display:flex;align-items:flex-end;justify-content:center;gap:0;z-index:50;cursor:pointer;background:linear-gradient(180deg,transparent,rgba(0,0,0,.55) 60%)}
+.dlg-portrait{width:min(260px,34vw);aspect-ratio:1;margin-right:-28px;position:relative;z-index:1;filter:drop-shadow(0 10px 20px rgba(0,0,0,.6))}
+.dlg-portrait canvas{width:100%;height:100%;display:block}
+.dlg-box{position:relative;flex:1;max-width:760px;min-height:120px;padding:18px 26px 22px 46px;background:linear-gradient(180deg,rgba(24,30,50,.95),rgba(9,12,22,.96));border:1px solid rgba(201,164,92,.6);border-radius:3px;box-shadow:0 12px 40px rgba(0,0,0,.6);margin-bottom:6px}
+.dlg-name{position:absolute;top:-17px;left:40px;padding:3px 16px;font-family:var(--f-display);font-weight:800;font-size:16px;background:linear-gradient(180deg,#2a3a66,#141c36);border:1px solid rgba(201,164,92,.7);border-radius:2px;letter-spacing:.06em}
+.dlg-name.enemy{background:linear-gradient(180deg,#66222a,#2a0c10)}
+.dlg-text{margin:0;font-family:var(--f-display);font-weight:500;font-size:clamp(15px,1.9vw,19px);line-height:1.85;min-height:3.6em;text-wrap:pretty}
+.dlg-next{position:absolute;right:16px;bottom:10px;width:9px;height:9px;border-right:2px solid var(--gold-hi);border-bottom:2px solid var(--gold-hi);transform:rotate(45deg);animation:bob 1s ease-in-out infinite}
+@keyframes bob{50%{transform:translateY(4px) rotate(45deg)}}
+#dialog.narr{align-items:center;justify-content:center;background:rgba(3,4,8,.78);padding-bottom:0;top:0}
+#dialog.narr .dlg-portrait{display:none}
+#dialog.narr .dlg-box{background:none;border:0;box-shadow:none;text-align:center;max-width:680px;padding:0 24px}
+#dialog.narr .dlg-name{display:none}
+#dialog.narr .dlg-text{font-size:clamp(16px,2.1vw,21px);line-height:2.1;color:#e9dfc4}
+
+/* overlays */
+.overlay{position:absolute;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:16px max(16px,env(safe-area-inset-right,0px)) 16px max(16px,env(safe-area-inset-left,0px))}
+#chapterCard{background:radial-gradient(ellipse at center,rgba(12,16,30,.9),rgba(2,3,6,.98));flex-direction:column;text-align:center;animation:fadeio 3.2s ease forwards;pointer-events:none}
+.cc-num{font-family:var(--f-display);font-size:clamp(15px,2vw,20px);letter-spacing:.5em;color:var(--gold)}
+.cc-name{font-family:var(--f-display);font-weight:800;font-size:clamp(40px,8vw,84px);letter-spacing:.12em;margin:8px 0 6px;background:linear-gradient(180deg,#fff7e0,#e2bd6a 60%,#9a6a26);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 4px 18px rgba(201,164,92,.35))}
+.cc-sub{font-family:var(--f-latin);font-size:clamp(11px,1.4vw,14px);letter-spacing:.3em;color:var(--muted)}
+.cc-rule{width:min(380px,60vw);height:1px;margin:18px auto;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
+@keyframes fadeio{0%{opacity:0}15%{opacity:1}80%{opacity:1}100%{opacity:0}}
+
+#loading{background:var(--ink);flex-direction:column;gap:14px}
+.ld-title{font-family:var(--f-display);font-size:15px;letter-spacing:.3em;color:var(--gold)}
+.ld-bar{width:min(320px,70vw);height:3px;background:rgba(255,255,255,.08);position:relative;overflow:hidden}
+.ld-bar i{position:absolute;inset:0 auto 0 0;width:0;background:linear-gradient(90deg,var(--gold),var(--gold-hi));box-shadow:0 0 10px var(--gold)}
+.ld-note{font-size:12px;color:var(--muted)}
+
+#title{flex-direction:column;justify-content:center;text-align:center;z-index:55;background:radial-gradient(ellipse at 50% 30%,rgba(0,0,0,0),rgba(0,0,0,.35))}
+.t-eyebrow{font-family:var(--f-latin);font-size:clamp(10px,1.3vw,13px);letter-spacing:.5em;color:var(--gold-hi);opacity:.9}
+.t-logo{margin:8px 0 2px;font-family:var(--f-display);font-weight:800;font-size:clamp(56px,12vw,140px);letter-spacing:.08em;line-height:1.05;background:linear-gradient(180deg,#ffffff 0%,#dfe9ff 35%,#7fa6e8 62%,#2f5cb0 100%);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 6px 30px rgba(80,140,255,.45)) drop-shadow(0 2px 0 rgba(0,0,0,.5));text-wrap:balance}
+.t-sub{font-family:var(--f-latin);font-size:clamp(11px,1.6vw,16px);letter-spacing:.32em;color:#d8cfb6}
+.t-menu{display:flex;flex-direction:column;gap:10px;align-items:center;margin-top:clamp(28px,6vh,56px)}
+.t-btn{min-width:220px;padding:12px 28px;font-family:var(--f-display);font-weight:700;font-size:19px;letter-spacing:.2em;color:#fff;background:linear-gradient(180deg,rgba(40,60,110,.85),rgba(12,20,44,.9));border:1px solid rgba(201,164,92,.75);border-radius:2px;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.15);transition:transform .15s,box-shadow .15s}
+.t-btn:hover,.t-btn:focus-visible{transform:translateY(-1px);box-shadow:0 10px 30px rgba(60,120,255,.35),inset 0 1px 0 rgba(255,255,255,.25);outline:none;border-color:var(--gold-hi)}
+.t-btn.ghost{background:rgba(0,0,0,.35);font-size:15px;min-width:160px;padding:9px 20px}
+.t-foot{position:absolute;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);left:0;right:0;font-size:11.5px;color:rgba(239,229,203,.6);letter-spacing:.1em}
+
+.modal{background:rgba(3,4,8,.72)}
+.card{position:relative;padding:22px 24px;max-width:640px;width:100%;max-height:100%;overflow:auto;background:linear-gradient(180deg,rgba(24,30,50,.97),rgba(9,12,22,.98));border:1px solid rgba(201,164,92,.6);border-radius:3px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+.card h2{margin:0 0 12px;font-family:var(--f-display);font-weight:800;font-size:24px;letter-spacing:.08em;color:var(--gold-hi)}
+.card h3{margin:16px 0 6px;font-family:var(--f-display);font-size:15px;color:var(--gold)}
+.card p,.card li{font-size:13.5px;line-height:1.75;color:#d9d2c0}
+.card ul{margin:0;padding-left:18px}
+kbd{font-family:var(--f-latin);font-size:11px;border:1px solid rgba(201,164,92,.5);border-radius:2px;padding:0 5px;background:rgba(255,255,255,.05)}
+.close-row{display:flex;justify-content:flex-end;margin-top:16px}
+
+/* status */
+.st-wrap{display:grid;grid-template-columns:minmax(0,200px) minmax(0,1fr);gap:20px}
+.st-wrap canvas{width:100%;aspect-ratio:1;display:block;border:1px solid rgba(201,164,92,.35)}
+.st-name{font-family:var(--f-display);font-weight:800;font-size:26px}
+.st-cls{color:var(--muted);font-size:13px;margin:2px 0 10px}
+.st-grid{display:grid;grid-template-columns:auto 1fr auto;gap:5px 10px;align-items:center}
+.st-grid .k{font-size:12.5px;color:var(--gold)}
+.st-grid .v{font-family:var(--f-latin);font-weight:700;font-variant-numeric:tabular-nums;text-align:right;min-width:24px}
+.st-grid .bar i{background:linear-gradient(90deg,#4f88dc,#9cc4ff)}
+.st-inv{margin-top:12px;font-size:13px;line-height:1.8}
+.st-inv span{color:var(--muted);font-size:12px}
+.st-bio{margin-top:10px;font-size:12.5px;color:var(--muted);line-height:1.7}
+@media (max-width:560px){.st-wrap{grid-template-columns:1fr}.st-wrap canvas{max-width:160px}}
+
+/* level up / exp */
+#expbar{position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 70px);transform:translateX(-50%);padding:10px 16px;display:flex;align-items:center;gap:10px;width:min(360px,calc(100vw - 32px));z-index:45}
+#expbar .bar{height:8px}
+#expbar .bar i{background:linear-gradient(90deg,#c9a45c,#ffe9a8);transition:none}
+#expbar .num{font-family:var(--f-latin);font-weight:700;font-size:16px;min-width:32px;text-align:right}
+#levelup{z-index:58}
+.lu-card{display:grid;grid-template-columns:minmax(0,220px) minmax(0,1fr);gap:18px;align-items:center;padding:22px 26px;max-width:640px;width:100%;background:linear-gradient(180deg,rgba(24,30,50,.97),rgba(9,12,22,.98));border:1px solid rgba(201,164,92,.7);border-radius:3px;box-shadow:0 0 60px rgba(201,164,92,.25),0 20px 60px rgba(0,0,0,.6);animation:pop .4s cubic-bezier(.2,1.4,.4,1)}
+.lu-card canvas{width:100%;aspect-ratio:1;display:block}
+.lu-title{font-family:var(--f-latin);font-weight:700;font-size:30px;letter-spacing:.2em;background:linear-gradient(180deg,#fff7e0,#e2bd6a);-webkit-background-clip:text;background-clip:text;color:transparent}
+.lu-name{font-family:var(--f-display);font-weight:800;font-size:20px;margin-top:2px}
+.lu-lv{font-family:var(--f-latin);font-size:14px;color:var(--muted);margin:2px 0 12px}
+.lu-lv b{color:#fff;font-size:18px}
+.lu-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 18px}
+.lu-s{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid rgba(201,164,92,.18);padding-bottom:3px;font-size:13px}
+.lu-s b{font-family:var(--f-latin);font-size:17px;font-variant-numeric:tabular-nums}
+.lu-s em{font-style:normal;font-family:var(--f-latin);font-weight:700;font-size:13px;color:#7fe07a;margin-left:6px;opacity:0;display:inline-block}
+.lu-s em.show{animation:plus .45s cubic-bezier(.2,1.6,.4,1) forwards}
+.lu-s.up b{color:#c8ffb0}
+@keyframes plus{0%{opacity:0;transform:translateY(8px) scale(.6)}100%{opacity:1;transform:none}}
+@keyframes pop{0%{transform:scale(.85);opacity:0}100%{transform:none;opacity:1}}
+@media (max-width:560px){.lu-card{grid-template-columns:1fr}.lu-card canvas{max-width:130px;margin:0 auto}}
+
+#toast{position:absolute;left:50%;top:calc(env(safe-area-inset-top,0px) + 70px);transform:translateX(-50%);padding:10px 20px;font-family:var(--f-display);font-weight:700;font-size:15px;z-index:46;white-space:nowrap;animation:pop .3s ease}
+#toast b{color:var(--gold-hi)}
+
+#endScreen{flex-direction:column;text-align:center;background:radial-gradient(ellipse at center,rgba(14,20,38,.92),rgba(2,3,6,.98));z-index:70}
+.end-title{font-family:var(--f-display);font-weight:800;font-size:clamp(36px,7vw,76px);letter-spacing:.12em;background:linear-gradient(180deg,#fff7e0,#e2bd6a 60%,#9a6a26);-webkit-background-clip:text;background-clip:text;color:transparent}
+.end-sub{font-family:var(--f-latin);letter-spacing:.3em;color:var(--muted);font-size:13px;margin-top:6px}
+.end-roster{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin:26px 0;max-width:720px}
+.end-roster figure{margin:0;width:96px}
+.end-roster canvas{width:96px;height:96px;display:block;border:1px solid rgba(201,164,92,.4)}
+.end-roster figcaption{font-family:var(--f-display);font-size:13px;margin-top:4px}
+.end-roster figcaption span{display:block;font-family:var(--f-latin);font-size:11px;color:var(--muted)}
+.end-btns{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+
+@media (max-width:640px){
+  #unitPanel{min-width:0;padding:7px 10px 7px 7px}
+  #unitPanel canvas{width:44px;height:44px}
+  .up-name{font-size:15px}
+  .tb{padding:6px 8px;font-size:12px;min-width:34px}
+  .dlg-portrait{width:30vw;margin-right:-14px}
+  .dlg-box{padding:16px 16px 20px 22px}
+  .dlg-name{left:18px}
+}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;animation-iteration-count:1!important;transition:none!important}}
+</style>
+
+<div id="app">
+  <canvas id="cv" aria-label="戦場マップ"></canvas>
+  <div id="hud" hidden>
+    <div id="unitPanel" class="panel" hidden><canvas id="upPortrait" width="116" height="116"></canvas><div><div class="up-name"></div><div class="up-class"></div><div class="up-hp"><span class="lab">HP</span><span class="num"></span><div class="bar"><i></i></div></div></div></div>
+    <div id="terrainPanel" class="panel" hidden><div class="tp-name"></div><div class="tp-row"><span>防御</span><b class="tp-def"></b></div><div class="tp-row"><span>回避</span><b class="tp-avo"></b></div></div>
+    <div id="goalPanel" class="panel"><div class="gp-turn">TURN<b>1</b></div><div class="gp-goal"></div></div>
+    <div id="toolbar">
+      <button class="tb" id="tbInfo" title="ユニット情報 (I)">情報</button>
+      <button class="tb" id="tbDanger" title="危険範囲 (D)">危険範囲</button>
+      <button class="tb" id="tbSound" title="サウンド (M)">♪</button>
+      <button class="tb" id="tbEnd" title="ターン終了 (E)">ターン終了</button>
+    </div>
+  </div>
+  <div id="actionMenu" class="panel menu" hidden></div>
+  <div id="forecast" class="panel" hidden></div>
+  <div id="banner" hidden></div>
+  <div id="expbar" class="panel" hidden><span class="lab">EXP</span><div class="bar"><i></i></div><b class="num">0</b></div>
+  <div id="toast" class="panel" hidden></div>
+  <div id="dialog" hidden><div class="dlg-portrait"><canvas id="dlgPortrait" width="520" height="520"></canvas></div><div class="dlg-box"><div class="dlg-name"></div><p class="dlg-text"></p><div class="dlg-next"></div></div></div>
+  <div id="levelup" class="overlay modal" hidden><div class="lu-card"><canvas id="luPortrait" width="440" height="440"></canvas><div><div class="lu-title">LEVEL UP</div><div class="lu-name"></div><div class="lu-lv"></div><div class="lu-grid"></div></div></div></div>
+  <div id="status" class="overlay modal" hidden><div class="card"><div class="st-wrap"><canvas id="stPortrait" width="400" height="400"></canvas><div><div class="st-name"></div><div class="st-cls"></div><div class="st-grid"></div><div class="st-inv"></div></div></div><div class="st-bio"></div><div class="close-row"><button class="t-btn ghost" id="stClose">閉じる</button></div></div></div>
+  <div id="help" class="overlay modal" hidden><div class="card">
+    <h2>遊び方</h2>
+    <p>自軍ユニットを選んで移動させ、敵を攻撃しましょう。全員が行動するか「ターン終了」で敵軍の番になります。リオネルが倒れるとゲームオーバーです。</p>
+    <h3>操作</h3>
+    <ul>
+      <li><b>マウス / タッチ</b>：タップで選択・決定。右クリックでキャンセル。ドラッグで地図を動かし、ホイールで拡大縮小。</li>
+      <li><b>キーボード</b>：<kbd>←↑↓→</kbd> カーソル、<kbd>Z</kbd>/<kbd>Enter</kbd> 決定、<kbd>X</kbd>/<kbd>Esc</kbd> キャンセル、<kbd>Tab</kbd> 武器切替、<kbd>I</kbd> 情報、<kbd>D</kbd> 危険範囲、<kbd>E</kbd> ターン終了、<kbd>A</kbd> 戦闘アニメ切替。</li>
+      <li>戦闘中はクリック / <kbd>Z</kbd> で早送り。</li>
+    </ul>
+    <h3>戦いの基本</h3>
+    <ul>
+      <li><b>三すくみ</b>：剣は斧に、斧は槍に、槍は剣に強い（威力+1・命中+15）。</li>
+      <li><b>追撃</b>：速さが相手より4以上高いと2回攻撃します。</li>
+      <li><b>地形</b>：林・山・砦・玉座は防御と回避が上がります。砦と玉座ではターン開始時にHPが回復します。</li>
+      <li><b>必殺</b>：ダメージ3倍。技が高いほど出やすく、相手の幸運で下がります。</li>
+      <li><b>村</b>：自軍ユニットで訪れると、道具や武器がもらえます。</li>
+      <li>敵ユニットを選ぶと、その移動・攻撃範囲が表示されます。</li>
+    </ul>
+    <div class="close-row"><button class="t-btn ghost" id="helpClose">閉じる</button></div>
+  </div></div>
+  <div id="chapterCard" class="overlay" hidden><div class="cc-num"></div><div class="cc-name"></div><div class="cc-rule"></div><div class="cc-sub"></div></div>
+  <div id="loading" class="overlay" hidden><div class="ld-title">戦場を描画しています</div><div class="ld-bar"><i></i></div><div class="ld-note">地形・光・影を生成中</div></div>
+  <div id="title" class="overlay">
+    <div class="t-eyebrow">A TACTICAL CHRONICLE</div>
+    <h1 class="t-logo">蒼焔戦記</h1>
+    <div class="t-sub">SOUEN SENKI — CHRONICLE OF THE AZURE FLAME</div>
+    <div class="t-menu"><button class="t-btn" id="btnStart">出陣する</button><button class="t-btn ghost" id="btnHelp">遊び方</button></div>
+    <div class="t-foot">全二章 ・ 約30〜40分 ・ 音が鳴ります</div>
+  </div>
+  <div id="endScreen" class="overlay" hidden></div>
+</div>
+<!--SCRIPTS-->
