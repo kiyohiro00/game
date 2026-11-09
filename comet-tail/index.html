@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#05060f">
+<meta name="description" content="キツネのルミが星の王冠をとりもどす横スクロールアクション。PC・スマホ対応。">
+<title>COMET TAIL — ルミと星の王冠</title>
+<style>
+  html,body{margin:0;position:fixed;inset:0;background:#05060f;overflow:hidden;overscroll-behavior:none;touch-action:none;
+    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;}
+  body{display:flex;align-items:center;justify-content:center;}
+  body.portrait{align-items:flex-start;padding-top:max(6px,env(safe-area-inset-top,0px));box-sizing:border-box;}
+  canvas{display:block;image-rendering:auto;background:#000;box-shadow:0 0 60px rgba(80,140,255,.25);touch-action:none;}
+
+  /* ---- タッチ操作 ---- */
+  #tc{position:fixed;inset:0;pointer-events:none;z-index:5;display:none;touch-action:none;
+    --u:clamp(64px,23vmin,100px);--sb:clamp(92px,30vmin,136px);
+    font-family:"Arial Rounded MT Bold","Hiragino Maru Gothic ProN","Yu Gothic UI","Meiryo",sans-serif;}
+  body.touch #tc{display:block;}
+  #tc-stick,#tc-btns,#tc .sb[data-s=pause]{display:none;}
+  #tc.play #tc-stick,#tc.play #tc-btns{display:block;}
+  #tc.play .sb[data-s=pause]{display:flex;}
+  #tc-stick{position:absolute;left:0;bottom:0;width:46%;height:72%;pointer-events:auto;touch-action:none;}
+  #tc-base{position:absolute;width:var(--sb);height:var(--sb);margin:calc(var(--sb)/-2) 0 0 calc(var(--sb)/-2);border-radius:50%;
+    border:2px solid rgba(255,255,255,.4);background:rgba(20,16,48,.26);opacity:.6;box-sizing:border-box;}
+  #tc-base.on{opacity:1;border-color:rgba(127,224,255,.9);}
+  #tc-base::before,#tc-base::after{content:"";position:absolute;top:50%;margin-top:-7px;border:7px solid transparent;opacity:.7;}
+  #tc-base::before{left:7px;border-right-color:#fff;border-left-width:0;}
+  #tc-base::after{right:7px;border-left-color:#fff;border-right-width:0;}
+  #tc-knob{position:absolute;left:50%;top:50%;width:46%;height:46%;margin:-23% 0 0 -23%;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.95),rgba(190,225,255,.6));box-shadow:0 3px 10px rgba(0,0,0,.45);}
+  #tc-btns{position:absolute;right:calc(env(safe-area-inset-right,0px) + 14px);bottom:calc(env(safe-area-inset-bottom,0px) + 14px);
+    width:calc(var(--u)*2.3);height:calc(var(--u)*1.95);pointer-events:none;}
+  body.portrait #tc-btns{bottom:calc(env(safe-area-inset-bottom,0px) + 9vh);}
+  .tb{position:absolute;border-radius:50%;pointer-events:auto;touch-action:none;display:flex;align-items:center;justify-content:center;box-sizing:border-box;
+    font-weight:900;font-size:calc(var(--u)*.17);letter-spacing:.02em;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.9);
+    border:2.5px solid rgba(255,255,255,.55);background:rgba(20,16,48,.34);}
+  .tb.on{background:rgba(255,255,255,.42);transform:scale(.92);}
+  .tb.jump{width:var(--u);height:var(--u);right:0;bottom:0;border-color:#ffe27a;background:rgba(255,196,40,.28);font-size:calc(var(--u)*.19);}
+  .tb.dash{width:calc(var(--u)*.8);height:calc(var(--u)*.8);right:calc(var(--u)*1.12);bottom:calc(var(--u)*.02);border-color:#7fe0ff;background:rgba(60,170,255,.26);}
+  .tb.down{width:calc(var(--u)*.68);height:calc(var(--u)*.68);right:calc(var(--u)*1.55);bottom:calc(var(--u)*.95);font-size:calc(var(--u)*.26);}
+  .tb.fire{width:calc(var(--u)*.68);height:calc(var(--u)*.68);right:calc(var(--u)*.55);bottom:calc(var(--u)*1.18);font-size:calc(var(--u)*.3);opacity:.35;}
+  .tb.fire.ready{opacity:1;border-color:#ffb347;background:rgba(255,140,40,.32);}
+  #tc-sys{position:absolute;display:flex;gap:8px;pointer-events:none;}
+  .sb{width:38px;height:38px;border-radius:11px;pointer-events:auto;display:flex;align-items:center;justify-content:center;box-sizing:border-box;
+    border:1.5px solid rgba(255,255,255,.4);background:rgba(20,16,48,.5);}
+  .sb svg{width:20px;height:20px;fill:#fff;stroke:#fff;}
+  .sb.off{opacity:.45;}
+  .sb:active{background:rgba(255,255,255,.35);}
+  #tc-hint{display:none;position:absolute;left:14px;font-size:12px;color:#9fb4e8;letter-spacing:.04em;}
+  body.portrait #tc-hint{display:block;}
+</style>
+</head>
+<body>
+<canvas id="game" width="960" height="540"></canvas>
+<script src="js/util.js"></script>
+<script src="js/touch.js"></script>
+<script src="js/levels.js"></script>
+<script src="js/fx.js"></script>
+<script src="js/world.js"></script>
+<script src="js/player.js"></script>
+<script src="js/entities.js"></script>
+<script src="js/boss.js"></script>
+<script src="js/render.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
