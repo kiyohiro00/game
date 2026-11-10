@@ -10,6 +10,7 @@
 | COMET TAIL — ルミと星の王冠 | キツネが主人公の横スクロールアクション（全4ステージ＋ボス、スマホのタッチ操作対応） | `comet-tail/` |
 | クレーンキャッチャー REAL | 3D・物理演算のクレーンゲーム（通常設定／フック設定、スマホのタッチ操作対応） | `crane-game/` |
 | フック台シミュレーター | リングをフックに掛ける「フック台」を物理計算で再現した3Dシミュレーター（全11台、スマホのタッチ操作対応） | `hook-sim/` |
+| 焚火 ― ただ、火を見つめる | 火をおこし、薪をくべて眺めるだけの焚火シミュレーター（炎は流体計算、音はその場で合成。PC推奨） | `takibi/` |
 
 公開URL: https://kiyohiro00.github.io/game/
 
@@ -23,6 +24,7 @@ comet-tail/         COMET TAIL（index.html と js/ がそのまま公開され�
 crane-game/         クレーンキャッチャー REAL（index.html・main.js・lib/ がそのまま公開される。ビルド不要）
 hook-sim/index.html フック台シミュレーター（ビルド済み。これがそのまま公開される）
 hook-sim/src/       フック台シミュレーターのソース（game.html と physics.js。hook-sim/ で node build.js）
+takibi/             焚火（index.html・src/・lib/ がそのまま公開される。ビルド不要）
 ```
 
 ## 作品を追加するには

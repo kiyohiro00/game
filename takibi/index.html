@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>焚火 ― ただ、火を見つめる</title>
+<style>
+  :root{
+    --ink: rgba(244, 226, 198, .92);
+    --ink-dim: rgba(244, 226, 198, .52);
+    --ember: #ff9a4a;
+    --line: rgba(244, 226, 198, .16);
+    --panel: rgba(10, 8, 7, .62);
+    --serif: "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "Noto Serif JP", "MS PMincho", serif;
+  }
+  *{ box-sizing: border-box; margin: 0; padding: 0; }
+  html, body{ width: 100%; height: 100%; overflow: hidden; background: #000; color: var(--ink);
+    font-family: var(--serif); -webkit-font-smoothing: antialiased; user-select: none; }
+  canvas#view{ position: fixed; inset: 0; display: block; outline: none; touch-action: none; }
+  body.idle{ cursor: none; }
+  body.idle canvas#view{ cursor: none !important; }
+  body.grab canvas#view{ cursor: grabbing !important; }
+  button{ font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+
+  /* ── はじまりの画面 ── */
+  #title{ position: fixed; inset: 0; z-index: 30; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at 50% 68%, rgba(60, 22, 6, .55) 0%, rgba(8, 5, 4, .93) 42%, #020202 80%);
+    cursor: pointer; transition: opacity 2.4s ease; }
+  #title.gone{ opacity: 0; pointer-events: none; }
+  #title h1{ font-weight: 500; font-size: clamp(64px, 13vw, 168px); letter-spacing: .32em; text-indent: .32em; line-height: 1;
+    color: #f6dfb8; text-shadow: 0 0 46px rgba(255, 120, 30, .42), 0 0 6px rgba(255, 190, 110, .35); }
+  #title .sub{ margin-top: 30px; font-size: clamp(14px, 1.5vw, 19px); letter-spacing: .5em; text-indent: .5em; color: var(--ink-dim); }
+  #title .go{ margin-top: 11vh; font-size: 15px; letter-spacing: .4em; text-indent: .4em; color: var(--ink); opacity: 0; transition: opacity 1.2s ease; }
+  #title.ready .go{ opacity: 1; animation: breathe 3.6s ease-in-out infinite; }
+  #title .note{ position: absolute; bottom: 34px; font-size: 12px; letter-spacing: .28em; color: rgba(244, 226, 198, .34); }
+  @keyframes breathe{ 0%, 100%{ opacity: .38; } 50%{ opacity: 1; } }
+
+  /* ── 手元の表示 ── */
+  .ui{ transition: opacity 1.4s ease; }
+  body:not(.playing) .ui, body.idle .ui, body.noui .ui{ opacity: 0; pointer-events: none; }
+  #tools{ position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 10; display: flex; gap: 2px;
+    padding: 5px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); backdrop-filter: blur(6px); }
+  #tools button{ min-width: 78px; padding: 9px 12px 8px; font-size: 15px; letter-spacing: .16em; text-indent: .16em; color: var(--ink-dim);
+    border-radius: 2px; transition: color .25s, background .25s; white-space: nowrap; }
+  #tools button small{ display: block; margin-top: 3px; font-family: ui-monospace, Consolas, monospace; font-size: 10px; letter-spacing: .1em; text-indent: 0; opacity: .55; }
+  #tools button:hover{ color: var(--ink); background: rgba(244, 226, 198, .06); }
+  #tools button.on{ color: #1a0f08; background: linear-gradient(180deg, #ffc27d, #f08a3c); }
+  #tools button.on small{ opacity: .7; }
+  #blowBtn{ position: fixed; right: 26px; bottom: 26px; z-index: 10; padding: 11px 16px 10px; font-size: 14px; letter-spacing: .2em;
+    border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink-dim); touch-action: none; }
+  #blowBtn small{ display: block; margin-top: 3px; font-family: ui-monospace, Consolas, monospace; font-size: 10px; opacity: .55; letter-spacing: .1em; }
+  #blowBtn.on{ color: var(--ember); border-color: rgba(255, 154, 74, .5); }
+  #hint{ position: fixed; left: 50%; bottom: 104px; transform: translateX(-50%); z-index: 9; width: min(86vw, 780px); text-align: center;
+    font-size: clamp(14px, 1.3vw, 17px); line-height: 1.9; letter-spacing: .14em; color: var(--ink);
+    text-shadow: 0 1px 10px rgba(0, 0, 0, .95), 0 0 3px rgba(0, 0, 0, .9); opacity: 0; transition: opacity 1.2s ease; pointer-events: none; }
+  #hint.show{ opacity: 1; }
+  body.idle #hint.show, body:not(.playing) #hint.show, body.noui #hint.show{ opacity: 0; }
+  #hint .sub{ display: block; margin-top: 2px; font-size: 12px; letter-spacing: .16em; color: var(--ink-dim); }
+  #btnHelp{ position: fixed; right: 26px; top: 22px; z-index: 10; width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 50%;
+    background: var(--panel); color: var(--ink-dim); font-size: 15px; }
+  #btnHelp:hover{ color: var(--ink); }
+  #elapsed{ position: fixed; left: 28px; top: 28px; z-index: 10; font-family: ui-monospace, Consolas, monospace; font-size: 12px; letter-spacing: .22em; color: rgba(244, 226, 198, .36); }
+  #tip{ position: fixed; z-index: 12; padding: 4px 10px; font-size: 13px; letter-spacing: .2em; border: 1px solid var(--line); background: var(--panel);
+    border-radius: 2px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #tip.show{ opacity: 1; }
+
+  /* ── 手引き ── */
+  #help{ position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, .55);
+    opacity: 0; pointer-events: none; transition: opacity .5s ease; }
+  #help.show{ opacity: 1; pointer-events: auto; }
+  #help .card{ width: min(92vw, 660px); max-height: 88vh; overflow: auto; padding: 34px 40px 30px; border: 1px solid var(--line); border-radius: 3px; background: rgba(12, 9, 7, .9); }
+  #help h2{ font-weight: 500; font-size: 22px; letter-spacing: .4em; margin-bottom: 20px; color: #f6dfb8; }
+  #help h3{ font-weight: 500; font-size: 13px; letter-spacing: .3em; color: var(--ember); margin: 20px 0 8px; }
+  #help p, #help li{ font-size: 14px; line-height: 2; letter-spacing: .08em; color: rgba(244, 226, 198, .8); }
+  #help ol{ padding-left: 1.6em; }
+  #help table{ width: 100%; border-collapse: collapse; }
+  #help td{ padding: 5px 0; font-size: 13.5px; letter-spacing: .08em; color: rgba(244, 226, 198, .8); border-bottom: 1px solid rgba(244, 226, 198, .07); }
+  #help td:first-child{ width: 42%; font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--ink-dim); }
+  #pace{ display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 3px; margin-top: 4px; }
+  #pace button{ padding: 5px 14px; font-size: 13px; letter-spacing: .14em; color: var(--ink-dim); border-radius: 2px; }
+  #pace button.on{ color: #1a0f08; background: #f0a25c; }
+  @media (max-width: 720px){
+    #tools button{ min-width: 0; padding: 9px 9px 8px; font-size: 13px; }
+    #blowBtn{ bottom: 92px; right: 12px; }
+    #hint{ bottom: 150px; }
+    #help .card{ padding: 24px 22px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="view" tabindex="0"></canvas>
+
+<div id="title">
+  <h1>焚火</h1>
+  <div class="sub">ただ、火を見つめる</div>
+  <div class="go">クリックして はじめる</div>
+  <div class="note">ヘッドホン推奨 ／ 部屋を暗くして</div>
+</div>
+
+<div id="elapsed" class="ui"></div>
+<button id="btnHelp" class="ui" title="手引き (H)">？</button>
+<div id="hint"></div>
+<div id="tip"></div>
+<div id="tools" class="ui">
+  <button data-tool="hand" class="on">火ばさみ<small>0</small></button>
+  <button data-tool="tinder">火口<small>1</small></button>
+  <button data-tool="kindling">細枝<small>2</small></button>
+  <button data-tool="log">薪<small>3</small></button>
+  <button data-tool="match">マッチ<small>4</small></button>
+</div>
+<button id="blowBtn" class="ui">息を吹く<small>Space 長押し</small></button>
+
+<div id="help">
+  <div class="card">
+    <h2>焚火の手引き</h2>
+    <h3>火をおこす</h3>
+    <ol>
+      <li>火口（ほくち）を炉のまんなかに置く。</li>
+      <li>細枝を、火口に立てかけるように五、六本。すき間が空気の通り道になる。</li>
+      <li>マッチを擦り、火口に近づけてしばらく待つ。</li>
+      <li>細枝に火が回ったら、薪を二、三本。一本だけでは火はもたない。寄り添わせると、互いの熱で燃えつづける。</li>
+    </ol>
+    <h3>火を守る</h3>
+    <p>炎が小さくなったら薪をくべる。炎が消えても、赤い熾（おき）が残っていれば、薪をのせて息を吹きかけるとまた燃え上がる。湿った薪はシューと鳴き、白い煙を出してなかなか燃えない。火ばさみで薪を寄せたり、崩したりもできる。</p>
+    <h3>操作</h3>
+    <table>
+      <tr><td>1 / 2 / 3 / 4</td><td>火口・細枝・薪・マッチを手に取る（手元の実物をクリックしてもよい）</td></tr>
+      <tr><td>クリック</td><td>置く ／ 火ばさみで薪をつかんで動かす</td></tr>
+      <tr><td>ホイール ・ Q / E</td><td>持っている薪の向き ・ 傾き</td></tr>
+      <tr><td>Space 長押し</td><td>カーソルのあたりへ息を吹く</td></tr>
+      <tr><td>ドラッグ（何もない所）</td><td>あたりを見回す。見上げれば星空</td></tr>
+      <tr><td>ホイール（手ぶらのとき）</td><td>火に身を寄せる ／ 離れる</td></tr>
+      <tr><td>0 ・ Esc ・ 右クリック</td><td>手を空ける</td></tr>
+      <tr><td>F ・ U ・ H</td><td>全画面 ・ 表示を消す ・ この手引き</td></tr>
+    </table>
+    <h3>薪の燃える速さ</h3>
+    <div id="pace">
+      <button data-pace="0.4">ゆっくり</button><button data-pace="1" class="on">ふつう</button><button data-pace="2.5">はやい</button>
+    </div>
+    <p style="margin-top:18px; color: rgba(244,226,198,.45); font-size:12.5px;">何もしなければ、表示はしずかに消える。月の満ち欠けと星の位置は、いまの実際の日時に合わせてある。</p>
+  </div>
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
