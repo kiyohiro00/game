@@ -9,6 +9,7 @@
 | 蒼焔戦記 | ファイアーエムブレム風の戦略シミュレーションRPG（全2章） | `souen/` |
 | COMET TAIL — ルミと星の王冠 | キツネが主人公の横スクロールアクション（全4ステージ＋ボス、スマホのタッチ操作対応） | `comet-tail/` |
 | クレーンキャッチャー REAL | 3D・物理演算のクレーンゲーム（通常設定／フック設定、スマホのタッチ操作対応） | `crane-game/` |
+| フック台シミュレーター | リングをフックに掛ける「フック台」を物理計算で再現した3Dシミュレーター（全11台、スマホのタッチ操作対応） | `hook-sim/` |
 
 公開URL: https://kiyohiro00.github.io/game/
 
@@ -20,6 +21,8 @@ souen/index.html    蒼焔戦記（ビルド済み。これがそのまま公開
 souen/src/          蒼焔戦記のソース（js/, assets/, build.py）
 comet-tail/         COMET TAIL（index.html と js/ がそのまま公開される。ビルド不要）
 crane-game/         クレーンキャッチャー REAL（index.html・main.js・lib/ がそのまま公開される。ビルド不要）
+hook-sim/index.html フック台シミュレーター（ビルド済み。これがそのまま公開される）
+hook-sim/src/       フック台シミュレーターのソース（game.html と physics.js。hook-sim/ で node build.js）
 ```
 
 ## 作品を追加するには

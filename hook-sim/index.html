@@ -1,0 +1,2186 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#17121c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="format-detection" content="telephone=no">
+<meta name="description" content="クレーンゲームのフック台を、鎖・リング・フック・板の物理計算で再現した3Dシミュレーター。スマホでもPCでも遊べます。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22%2316111b%22%2F%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2224%22%20r%3D%2212%22%20fill%3D%22none%22%20stroke%3D%22%23f4f6fa%22%20stroke-width%3D%225%22%2F%3E%3Cpath%20d%3D%22M20%2050h24l-5-12H25z%22%20fill%3D%22%23ffe06a%22%2F%3E%3C%2Fsvg%3E">
+<style>body{margin:0}[hidden]{display:none!important}</style>
+<title>フック台シミュレーター</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=DotGothic16&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* 夜のゲームセンターで台の前に立つ：画面いっぱいの台と、その下の操作盤。設定と記録は店員さんのカード */
+:root {
+  color-scheme: dark;
+  --night: #16111b;        /* 店内の暗がり */
+  --deck: #282030;         /* 操作盤 */
+  --deck-hi: #3a3045;
+  --ink: #f5efe6;          /* 文字 */
+  --muted: #b3a7bf;
+  --line: #4a3f56;
+  --lemon: #ffe06a;        /* ①横ボタン・フックの土台の色 */
+  --mint: #95e2cc;         /* ②奥ボタン・本体の色 */
+  --pink: #ffb1c8;         /* ③下降・取れた */
+  --lav: #c6b6f4;          /* 板の色 */
+  --led: #ff6a4d;          /* クレジット表示 */
+  --card: #fbf7ef;         /* 店員さんのカード */
+  --card-ink: #2a2230;
+  --card-muted: #6f6478;
+  --ok: #3aa889; --warn: #e0892c; --bad: #d4506a;
+  --f-display: "Dela Gothic One", "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --f-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+  --f-dot: "DotGothic16", "Zen Kaku Gothic New", monospace;
+  --r: 14px;
+}
+html, body { height: 100%; overscroll-behavior: none; }
+body { background: var(--night); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.6; overflow: hidden; touch-action: pan-x pan-y; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
+/* 長押しで文字が選ばれたり、メニューが出たりしないようにする（入力らんは別） */
+#app { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+#app input { -webkit-user-select: auto; user-select: auto; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--lemon); outline-offset: 2px; }
+
+#app { height: 100vh; height: 100dvh; display: grid; grid-template-columns: minmax(0, 1fr) 380px; grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: "top top" "stage side" "deck side"; }
+
+/* 上の帯 */
+.topbar { grid-area: top; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; padding-block: 10px; padding-top: calc(10px + env(safe-area-inset-top, 0px)); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); border-bottom: 1px solid var(--line); background: linear-gradient(#1d1724, #17121c); }
+.brand { display: flex; align-items: baseline; gap: 8px; }
+.brand b { font-family: var(--f-display); font-weight: 400; font-size: 26px; color: var(--lemon); letter-spacing: .04em; }
+.brand span { font-family: var(--f-display); font-size: 14px; color: var(--muted); letter-spacing: .12em; }
+.machine-name { font-size: 13px; color: var(--muted); padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; white-space: nowrap; }
+.meters { display: flex; gap: 16px; margin-left: auto; font-size: 13px; color: var(--muted); }
+.meters b { font-family: var(--f-dot); font-weight: 400; font-size: 20px; color: var(--ink); font-variant-numeric: tabular-nums; margin-left: 4px; }
+.meters .over b { color: var(--pink); }
+#openSide { display: none; border: 1px solid var(--line); background: var(--deck); border-radius: 999px; padding: 6px 14px; font-size: 13px; }
+
+/* 台 */
+.stage { grid-area: stage; position: relative; min-height: 0; overflow: hidden; }
+#view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.views { position: absolute; top: 12px; right: max(12px, env(safe-area-inset-right, 0px)); display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.views button, .tools button { background: rgba(22, 17, 27, .72); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; font-size: 12.5px; color: var(--muted); backdrop-filter: blur(6px); }
+.views button[aria-pressed="true"], .tools button[aria-pressed="true"] { color: var(--night); background: var(--mint); border-color: var(--mint); }
+
+.clock { position: absolute; bottom: 60px; left: max(12px, env(safe-area-inset-left, 0px)); width: 172px; padding: 10px 12px 8px; background: rgba(22, 17, 27, .78); border: 1px solid var(--line); border-radius: var(--r); backdrop-filter: blur(6px); }
+.clock h3 { margin: 0 0 2px; font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .08em; }
+.clock svg { width: 100%; height: auto; display: block; }
+.clock .now { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; color: var(--muted); }
+.clock .now b { font-family: var(--f-dot); font-weight: 400; font-size: 18px; color: var(--ink); }
+.clock .per { font-family: var(--f-dot); color: var(--muted); font-size: 12px; }
+
+.status { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); max-width: calc(100% - 32px); padding: 8px 18px; border-radius: 999px; background: rgba(22, 17, 27, .82); border: 1px solid var(--line); font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; backdrop-filter: blur(6px); }
+.toast { position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%) scale(.96); opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s; text-align: center; padding: 18px 26px; border-radius: 18px; background: rgba(22, 17, 27, .9); border: 1px solid var(--line); min-width: 240px; max-width: calc(100% - 32px); }
+.toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+.toast .big { font-family: var(--f-display); font-size: 30px; line-height: 1.25; display: block; }
+.toast .small { font-size: 13px; color: var(--muted); display: block; margin-top: 6px; }
+.toast.get { background: var(--lemon); color: var(--card-ink); border-color: var(--lemon); }
+.toast.get .small { color: #5a4a20; }
+.loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 14px; }
+
+/* 操作盤 */
+.deck { grid-area: deck; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; padding-block: 14px 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); background: linear-gradient(180deg, var(--deck-hi), var(--deck) 22%, #211a28); border-top: 1px solid #54486180; box-shadow: inset 0 1px 0 #ffffff14; }
+.pay { display: flex; align-items: center; gap: 18px; }
+.coins { display: flex; gap: 8px; }
+.coin .n { display: none; }
+.coin { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: #1b1520; border-radius: 12px; padding: 8px 12px 8px 8px; font-size: 13px; font-weight: 700; }
+.coin i { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-family: var(--f-dot); font-size: 11px; color: #4b3d1e; background: radial-gradient(circle at 35% 30%, #fff4c4, #d9b862 60%, #a88833); box-shadow: inset 0 0 0 2px #c9a64e; }
+.coin.c500 i { background: radial-gradient(circle at 35% 30%, #ffffff, #c9ccd4 60%, #8e939f); box-shadow: inset 0 0 0 2px #b5b9c2; color: #3b3e46; font-size: 10px; }
+.coin:active { transform: translateY(1px); }
+.led { display: flex; flex-direction: column; align-items: center; padding: 6px 12px 4px; background: #0b0809; border-radius: 10px; box-shadow: inset 0 2px 6px #000; min-width: 92px; }
+.led b { font-family: var(--f-dot); font-weight: 400; font-size: 28px; line-height: 1; color: var(--led); text-shadow: 0 0 8px #ff6a4d99; font-variant-numeric: tabular-nums; letter-spacing: .08em; }
+.led small { font-size: 9.5px; letter-spacing: .2em; color: #8a5246; }
+.led .timer { font-size: 11px; color: #c96a55; font-family: var(--f-dot); }
+.pushes { display: flex; gap: 18px; align-items: center; margin-left: auto; margin-right: auto; }
+.push { width: 92px; height: 92px; flex: 0 0 auto; border-radius: 50%; border: 0; position: relative; display: grid; place-items: center; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.push .cap { position: absolute; inset: 9px; border-radius: 50%; display: grid; place-items: center; align-content: center; gap: 0; transition: transform .06s, filter .2s, box-shadow .2s; }
+.push .cap b { font-size: 30px; line-height: 1; font-family: var(--f-display); font-weight: 400; }
+.push .cap span { font-size: 12px; font-weight: 700; letter-spacing: .1em; }
+.push { background: radial-gradient(circle at 50% 40%, #4a4054, #1c1621 72%); box-shadow: 0 4px 0 #120e15, inset 0 1px 0 #ffffff22; }
+.push.b1 .cap { background: radial-gradient(circle at 40% 32%, #fff6c8, var(--lemon) 55%, #d6ae2a); color: #4a3a08; box-shadow: 0 5px 0 #a8861c, 0 0 0 0 #ffe06a00; }
+.push.b2 .cap { background: radial-gradient(circle at 40% 32%, #e9fff7, var(--mint) 55%, #4fb79a); color: #10443a; box-shadow: 0 5px 0 #3a8b75; }
+.push.b3 .cap { background: radial-gradient(circle at 40% 32%, #fff0f5, var(--pink) 55%, #dd7898); color: #5b1f33; box-shadow: 0 5px 0 #b05a78; }
+.push[aria-disabled="true"] .cap { filter: saturate(.25) brightness(.55); }
+.push.lit .cap { animation: lit 1s ease-in-out infinite; }
+.push.down .cap { transform: translateY(4px); box-shadow: 0 1px 0 #00000055 !important; }
+@keyframes lit { 50% { filter: brightness(1.15) drop-shadow(0 0 12px #ffffff66); } }
+.push kbd { position: absolute; bottom: -18px; left: 50%; transform: translateX(-50%); font-family: var(--f-dot); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.tools { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* 店員さんのカード（設定と記録） */
+.side { grid-area: side; min-height: 0; display: flex; flex-direction: column; background: var(--card); color: var(--card-ink); border-left: 1px solid var(--line); }
+.side .tabs { display: flex; border-bottom: 1px solid #e3dccf; padding-inline: 10px; padding-top: 8px; gap: 2px; }
+.side .tabs button { flex: 1; background: none; border: 0; padding: 9px 4px; font-weight: 700; font-size: 13.5px; color: var(--card-muted); border-bottom: 3px solid transparent; }
+.side .tabs button[aria-selected="true"] { color: var(--card-ink); border-bottom-color: var(--card-ink); }
+#closeSide { display: none; }
+.scrim { display: none; }
+.only-touch { display: none; }
+.side .pane { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px 24px; }
+.side h2 { font-family: var(--f-display); font-weight: 400; font-size: 18px; margin: 4px 0 10px; letter-spacing: .02em; text-wrap: balance; }
+.side h4 { margin: 18px 0 6px; font-size: 13px; letter-spacing: .06em; color: var(--card-muted); }
+.side p { margin: 0 0 10px; }
+.side .lede { font-size: 13px; color: var(--card-muted); }
+.presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.preset { text-align: left; background: #fff; border: 1.5px solid #e6dfd2; border-radius: 12px; padding: 10px 11px; display: flex; flex-direction: column; gap: 2px; min-width: 0; color: var(--card-ink); }
+.preset b { font-size: 14px; }
+.preset small { font-size: 11.5px; color: var(--card-muted); line-height: 1.45; }
+.preset em { font-style: normal; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; color: #7b5a00; background: #fff1b8; border-radius: 6px; padding: 1px 6px; align-self: flex-start; }
+.preset[aria-pressed="true"] { border-color: var(--card-ink); box-shadow: 0 0 0 2px var(--card-ink) inset; }
+.field { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px dashed #e6dfd2; }
+.field > span { font-size: 12.5px; color: var(--card-muted); }
+.seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.seg button { border: 1px solid #ddd5c6; background: #fff; border-radius: 8px; padding: 3px 9px; font-size: 12.5px; color: var(--card-ink); }
+.seg button[aria-pressed="true"] { background: var(--card-ink); color: var(--card); border-color: var(--card-ink); }
+.range { display: flex; align-items: center; gap: 8px; }
+.range input { flex: 1; min-width: 0; accent-color: var(--card-ink); }
+.range output { font-family: var(--f-dot); font-size: 13px; width: 48px; text-align: right; }
+.group-title { margin: 16px 0 2px; font-weight: 700; font-size: 13.5px; }
+.locked { font-size: 12.5px; background: #fff1b8; color: #6a5200; border-radius: 10px; padding: 8px 10px; margin: 8px 0; }
+.secret { background: #2a2230; color: #fbf7ef; border-radius: 12px; padding: 14px; font-size: 13px; }
+.secret button { margin-top: 10px; background: var(--lemon); color: #2a2230; border: 0; border-radius: 999px; padding: 6px 14px; font-weight: 700; }
+.summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 12px; }
+.summary div { background: #fff; border: 1px solid #e6dfd2; border-radius: 10px; padding: 6px 8px; }
+.summary small { display: block; font-size: 11px; color: var(--card-muted); }
+.summary b { font-family: var(--f-dot); font-weight: 400; font-size: 18px; font-variant-numeric: tabular-nums; }
+.budget { display: flex; align-items: center; gap: 8px; font-size: 12.5px; margin-bottom: 8px; flex-wrap: wrap; }
+.budget input { width: 86px; padding: 4px 8px; border: 1px solid #ddd5c6; border-radius: 8px; font: inherit; font-family: var(--f-dot); background: #fff; color: var(--card-ink); }
+.warnline { font-size: 12.5px; border-radius: 10px; padding: 8px 10px; margin-bottom: 10px; background: #ffe2e9; color: #7a2140; }
+.log-wrap { overflow-x: auto; }
+table.log { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+table.log th { text-align: left; font-weight: 700; color: var(--card-muted); font-size: 11px; padding: 4px 4px; border-bottom: 1px solid #ddd5c6; white-space: nowrap; }
+table.log td { padding: 5px 4px; border-bottom: 1px dashed #e6dfd2; white-space: nowrap; vertical-align: top; }
+table.log td.res b { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; }
+.r-get { background: #ffe06a; color: #4a3a08; } .r-lift { background: #ffd9a8; color: #6b3d00; } .r-top { background: #ffd2dd; color: #7a2140; } .r-touch { background: #e3ddf6; color: #3e2f74; } .r-miss { background: #ece7de; color: #5e5664; }
+.empty { font-size: 13px; color: var(--card-muted); background: #fff; border: 1px dashed #ddd5c6; border-radius: 12px; padding: 14px; }
+.howto ol { padding-left: 20px; margin: 0 0 10px; }
+.howto li { margin-bottom: 6px; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 12.5px; }
+.keys kbd { font-family: var(--f-dot); background: #fff; border: 1px solid #ddd5c6; border-radius: 6px; padding: 0 6px; }
+.fine { font-size: 12px; color: var(--card-muted); }
+.three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0 14px; }
+.three div { background: #fff; border: 1px solid #e6dfd2; border-radius: 10px; padding: 8px; text-align: center; font-weight: 700; font-size: 13px; }
+
+/* せまい画面・低い画面：設定とノートは下から出るシートにする */
+@media (max-width: 900px), (max-height: 520px) {
+  #app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(200px, 1fr) auto; grid-template-areas: "top" "stage" "deck"; }
+  .coin { padding: 6px 9px 6px 6px; font-size: 12px; gap: 6px; }
+  .coin i { width: 24px; height: 24px; font-size: 9.5px; }
+  .led { min-width: 70px; padding: 4px 8px 3px; }
+  .led b { font-size: 22px; }
+  .tools button { padding: 7px 12px; font-size: 12px; }
+  .views button { padding: 7px 12px; }
+  .side { position: fixed; inset: auto 0 0 0; height: 84%; z-index: 20; border-left: 0; border-radius: 18px 18px 0 0; box-shadow: 0 -10px 40px #0008; transform: translateY(105%); visibility: hidden; transition: transform .3s, visibility 0s .3s; padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .side.open { transform: none; visibility: visible; transition: transform .3s; }
+  .side.open + .scrim { display: block; position: fixed; inset: 0; z-index: 19; background: #0009; }
+  .side .pane { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  #openSide, #closeSide { display: inline-block; }
+  #openSide { padding: 8px 14px; }
+  #closeSide { background: none; border: 0; font-size: 24px; line-height: 1; padding: 6px 12px; color: var(--card-muted); flex: 0 0 auto !important; }
+  .side .tabs button { padding: 12px 4px; }
+  .seg { gap: 6px; }
+  .seg button { padding: 7px 12px; font-size: 13px; }
+  .range input { height: 32px; }
+  .budget input { font-size: 16px; width: 96px; }   /* 16px 未満だと iPhone が勝手に拡大する */
+  .meters { margin-left: 0; order: 3; width: 100%; justify-content: space-between; }
+  .clock { bottom: 56px; width: 132px; padding: 8px 9px 6px; }
+  .push { width: 76px; height: 76px; }
+  .push .cap b { font-size: 24px; }
+  .deck { gap: 12px; padding-block: 10px 12px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); row-gap: 8px; }
+  .pay { order: 1; gap: 12px; }
+  .pushes { order: 3; width: 100%; margin: 0 0 12px; justify-content: center; }
+  .tools { order: 4; width: 100%; justify-content: center; }
+}
+/* 指で操作する画面では、キーの案内を出さない */
+@media (hover: none) and (pointer: coarse) {
+  .push kbd, .only-key { display: none; }
+  .pushes { margin-bottom: 0 !important; }
+  .only-touch { display: block; }
+}
+/* スマホのたて持ち：ゆれ時計を操作盤の左に置いて、台の画面をかくさない */
+@media (max-width: 540px) {
+  .topbar { gap: 4px 10px; padding-block: 6px; padding-top: calc(6px + env(safe-area-inset-top, 0px)); }
+  .brand { gap: 6px; }
+  .brand b { font-size: 19px; }
+  .brand span { font-size: 11px; }
+  .machine-name { display: none; }
+  #openSide { margin-left: auto; font-size: 12.5px; }
+  .meters { font-size: 11.5px; gap: 8px; }
+  .meters b { font-size: 16px; }
+  .views { top: 8px; right: 8px; left: 8px; gap: 5px; }
+  .views button { padding: 7px 11px; font-size: 12px; }
+  .views .long { display: none; }
+  .status { box-sizing: border-box; bottom: 10px; font-size: 12.5px; padding: 6px 14px; white-space: normal; text-align: center; text-wrap: balance; border-radius: 16px; width: max-content; max-width: min(calc(100% - 20px), 23em); line-height: 1.4; }
+  .toast { padding: 14px 18px; min-width: 200px; }
+  .toast .big { font-size: 24px; }
+  .deck { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "clock pay" "clock pushes" "tools tools"; gap: 8px 0; padding-block: 8px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px)); }
+  .deck .clock { grid-area: clock; position: static; align-self: stretch; display: flex; flex-direction: column; justify-content: center; width: 100px; margin-right: 10px; padding: 5px 6px 4px; background: #1b1520; backdrop-filter: none; border-radius: 12px; }
+  .deck .clock h3 { font-size: 10.5px; text-align: center; }
+  .deck .clock .per { display: none; }
+  .deck .clock .now { gap: 2px; white-space: nowrap; }
+  .deck .clock .now span { font-size: 10px; overflow: hidden; text-overflow: ellipsis; }
+  .deck .clock .now b { font-size: 16px; line-height: 1.2; }
+  .pay { grid-area: pay; justify-content: space-between; gap: 6px; min-width: 0; }
+  .coins { gap: 6px; }
+  .coin { padding: 6px 8px 6px 6px; gap: 5px; white-space: nowrap; min-height: 40px; }
+  .coin .w { display: none; }
+  .coin .n { display: inline; }
+  .led { min-width: 50px; padding: 4px 6px 3px; }
+  .led .timer { font-size: 10px; white-space: nowrap; }
+  .pushes { grid-area: pushes; width: auto; margin: 0; gap: 10px; min-width: 0; }
+  .push { width: auto; height: auto; flex: 0 1 74px; min-width: 0; aspect-ratio: 1; }
+  .push .cap { inset: 8px; }
+  .push .cap b { font-size: 23px; }
+  .push .cap span { font-size: 11px; }
+  .push kbd { display: none; }
+  .tools { grid-area: tools; width: auto; gap: 6px; flex-wrap: nowrap; }
+  .tools button { padding: 7px 11px; white-space: nowrap; }
+  .side { height: 88%; }
+  .side .tabs { padding-inline: 6px; }
+  .side .tabs button { font-size: 12.5px; padding: 13px 0; white-space: nowrap; letter-spacing: -.01em; }
+  .side .pane { padding: 12px 14px 24px; }
+  .field { grid-template-columns: 84px minmax(0, 1fr); }
+}
+@media (max-width: 350px) {
+  .brand span { display: none; }
+  .deck .clock { width: 84px; margin-right: 8px; }
+  .coin .n { display: none; }
+  .coin { padding: 6px; }
+  .pushes { gap: 6px; }
+  .tools button { padding: 7px 8px; font-size: 11.5px; }
+}
+/* スマホの横持ち：台の画面を左に、操作盤を右のたて列にする */
+@media (max-height: 520px) and (min-width: 541px) {
+  #app { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "top top" "stage deck"; }
+  .topbar { flex-wrap: nowrap; gap: 12px; padding-block: 4px; padding-top: calc(4px + env(safe-area-inset-top, 0px)); }
+  .brand b { font-size: 18px; }
+  .brand span { font-size: 11px; }
+  .machine-name { display: none; }
+  .meters { order: 0; width: auto; margin-left: auto; font-size: 11.5px; gap: 12px; white-space: nowrap; }
+  .meters b { font-size: 16px; }
+  #openSide { padding: 5px 12px; font-size: 12.5px; white-space: nowrap; }
+  .views { top: 8px; }
+  .views .long { display: none; }
+  .clock { bottom: 8px; width: 104px; padding: 6px 8px 5px; }
+  .clock h3 { font-size: 11px; }
+  .clock .per { display: none; }
+  .clock .now span { font-size: 11px; }
+  .status { box-sizing: border-box; bottom: 8px; font-size: 12.5px; padding: 6px 14px; width: max-content; max-width: calc(100% - 290px); white-space: normal; text-align: center; border-radius: 16px; line-height: 1.4; }
+  .deck { flex-direction: column; flex-wrap: nowrap; justify-content: center; align-items: stretch; width: 204px; gap: 10px; padding: 8px 10px; padding-right: max(10px, env(safe-area-inset-right, 0px)); padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); border-top: 0; border-left: 1px solid #54486180; overflow-y: auto; }
+  .pay { order: 1; justify-content: space-between; gap: 6px; }
+  .coins { gap: 6px; }
+  .coin { padding: 6px 8px 6px 6px; gap: 5px; white-space: nowrap; min-height: 40px; }
+  .coin .w { display: none; }
+  .coin .n { display: inline; }
+  .led { min-width: 50px; padding: 4px 6px 3px; }
+  .led .timer { font-size: 10px; white-space: nowrap; }
+  .pushes { order: 2; width: auto; margin: 0; gap: 8px; }
+  .push { width: auto; height: auto; flex: 0 1 72px; min-width: 0; aspect-ratio: 1; }
+  .push .cap { inset: 8px; }
+  .push .cap b { font-size: 22px; }
+  .push .cap span { font-size: 11px; }
+  .push kbd { display: none; }
+  .tools { order: 3; width: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .tools button { padding: 6px 4px; white-space: nowrap; }
+  .side { inset: 0 0 0 auto; width: min(460px, 100%); height: 100%; border-radius: 18px 0 0 18px; box-shadow: -10px 0 40px #0008; transform: translateX(105%); padding-bottom: 0; padding-right: env(safe-area-inset-right, 0px); }
+}
+@media (prefers-reduced-motion: reduce) { .push.lit .cap { animation: none; filter: brightness(1.1); } .toast { transition: none; } .side { transition: none; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand"><b>フック台</b><span>シミュレーター</span></div>
+    <div class="machine-name" id="machineName">横向きフック（練習台）</div>
+    <div class="meters">
+      <div id="mSpent">使った金額<b>¥0</b></div>
+      <div id="mGets">取れた<b>0</b></div>
+      <div id="mPer">1個あたり<b>—</b></div>
+    </div>
+    <button id="openSide" type="button">台の設定・ノート</button>
+  </header>
+
+  <main class="stage" id="stage">
+    <canvas id="view" aria-label="フック台の中のようす"></canvas>
+    <div class="loading" id="loading">台を組み立てています…</div>
+    <div class="clock" id="clock" aria-live="off">
+      <h3 id="clockTitle">横のゆれ</h3>
+      <svg viewBox="0 0 160 150" id="clockSvg" aria-hidden="true"></svg>
+      <div class="now"><span id="clockName">ほぼ止まっている</span><b id="clockNo">—</b></div>
+      <div class="per" id="clockPer">ゆれ 0.0cm ・ 周期 —</div>
+    </div>
+    <div class="views" role="group" aria-label="見る位置">
+      <button type="button" data-view="front" aria-pressed="true">正面</button>
+      <button type="button" data-view="side" aria-pressed="false">横から</button>
+      <button type="button" data-view="hook" aria-pressed="false">フック寄り</button>
+      <button type="button" data-view="top" aria-pressed="false">真上<span class="long">（練習）</span></button>
+    </div>
+    <div class="status" id="status">100円を入れてください</div>
+    <div class="toast" id="toast" role="status" aria-live="polite"><span class="big" id="toastBig"></span><span class="small" id="toastSmall"></span></div>
+  </main>
+
+  <section class="deck" aria-label="操作盤">
+    <div class="pay">
+      <div class="coins">
+        <button class="coin" id="coin100" type="button" aria-label="100円を入れる（1回）"><i>100</i><span class="w">100円</span><span class="n">1回</span></button>
+        <button class="coin c500" id="coin500" type="button" aria-label="500円を入れる（6回）"><i>500</i><span class="w">500円で6回</span><span class="n">6回</span></button>
+      </div>
+      <div class="led" aria-label="残りの回数"><b id="credit">00</b><small>CREDIT</small><span class="timer" id="timer">&nbsp;</span></div>
+    </div>
+    <div class="pushes" id="pushes">
+      <button class="push b1" id="btn1" type="button" aria-disabled="true" aria-label="1 横ボタン"><span class="cap"><b>→</b><span>横</span></span><kbd>1 / →</kbd></button>
+      <button class="push b2" id="btn2" type="button" aria-disabled="true" aria-label="2 奥ボタン"><span class="cap"><b>↑</b><span>奥</span></span><kbd>2 / ↑</kbd></button>
+      <button class="push b3" id="btn3" type="button" aria-disabled="true" aria-label="3 下降ボタン" hidden><span class="cap"><b>▼</b><span>下降</span></span><kbd>3 / ↓</kbd></button>
+    </div>
+    <div class="tools" role="group" aria-label="表示">
+      <button type="button" id="tSlow" aria-pressed="false">スロー</button>
+      <button type="button" id="tTrail" aria-pressed="false">リングの軌跡</button>
+      <button type="button" id="tClock" aria-pressed="true">ゆれ時計</button>
+      <button type="button" id="tSound" aria-pressed="true">音</button>
+    </div>
+  </section>
+
+  <aside class="side" id="side" aria-label="台の設定と記録">
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" data-tab="machine" aria-selected="true">台を選ぶ</button>
+      <button type="button" role="tab" data-tab="seven" aria-selected="false">7つのところ</button>
+      <button type="button" role="tab" data-tab="note" aria-selected="false">ノート</button>
+      <button type="button" role="tab" data-tab="howto" aria-selected="false">遊び方</button>
+      <button type="button" id="closeSide" aria-label="閉じる">×</button>
+    </div>
+    <div class="pane" id="pane-machine" role="tabpanel"></div>
+    <div class="pane" id="pane-seven" role="tabpanel" hidden></div>
+    <div class="pane" id="pane-note" role="tabpanel" hidden></div>
+    <div class="pane howto" id="pane-howto" role="tabpanel" hidden>
+      <h2>遊び方</h2>
+      <ol>
+        <li>100円を入れると①が光ります。押している間だけ本体が<b>右</b>へ動き、離すと止まります。</li>
+        <li>次に②を押している間だけ<b>奥</b>へ動きます。離すと、本体がリングをつり下げたまま下りていきます。</li>
+        <li>下までいくと上がり、リングがフックに掛かれば板が持ち上がって景品が落ちます。</li>
+        <li>①も②も、押せるのは1回だけです。止まったリングもゆれます。</li>
+      </ol>
+      <h4>本の3つのこつ</h4>
+      <div class="three"><div>ゆれ</div><div>押しポイント</div><div>置く場所</div></div>
+      <p>根元をフックの<b>開いた側の反対</b>に置き、ゆらしながら下ろして、着地の瞬間にリングを<b>開いた側</b>へ落とします。上がるとき、リングは根元の下へもどろうとします。この動きで掛かります。</p>
+      <p>ゆれは、進む向きと<b>逆</b>にふれたときに押すと大きくなります。「ゆれ時計」は本の①〜⑤の番号で、いまリングがどこにいるかを示します。外れたら「ノート」を見て、変えるのは1回に1つだけにしましょう。</p>
+      <div class="only-touch">
+        <h4>スマホでの操作</h4>
+        <p>①②のボタンは、<b>指で押している間だけ</b>動きます。台の画面は1本指でなぞると回り、2本指でつまむと近づいたり離れたりします。「正面」「横から」などを押すと、見る位置がもどります。</p>
+      </div>
+      <h4 class="only-key">キー</h4>
+      <div class="keys only-key">
+        <kbd>1</kbd><span>または →：①横ボタン</span>
+        <kbd>2</kbd><span>または ↑：②奥ボタン</span>
+        <kbd>3</kbd><span>または ↓：③下降ボタン（その台だけ）</span>
+        <kbd>C</kbd><span>100円を入れる</span>
+        <kbd>S</kbd><span>スロー</span>
+      </div>
+      <h4>この台について</h4>
+      <p class="fine">『知っていると知らないでここまで違う クレーンゲームのフック必勝法』（kai.co）で整理した仕組みをもとに、鎖・リング・フック・板を物理計算で動かしています。寸法やゆれ方、景品の落ち方は、実際の台を測ったものではありません。実機の設定は店や台で違い、取れることを保証するものではありません。メーカーや店舗とは関係のない、架空の台です。</p>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+</div>
+
+<script>
+/* フック台シミュレーター：機械の制御と物理（ブラウザと Node で共用）
+ *
+ * 単位はメートル・キログラム・秒。y が上、x が右、z が手前（プレイヤー側）。
+ * 鎖は質点の列（距離拘束＋つなぎ止め）、リングは剛体のトーラス、
+ * 板はレールの上を上下だけに動く物体として、小さい刻み（1/1440秒）の
+ * 位置ベース法（XPBD）で解く。
+ */
+(function (global) {
+  'use strict';
+
+  const G = 9.81;
+  const H = 1 / 1440;            // 1回の刻み
+  const EPS = 1e-12;
+
+  // ---------------------------------------------------------------- 台の寸法
+  const WORLD = {
+    deckY: 0.06,                             // 景品を置く床
+    interior: { x0: -0.355, x1: 0.355, z0: -0.275, z1: 0.275, y1: 0.985 },
+    headTop: 0.93,                           // 根元のいちばん上
+    home: { x: -0.27, z: 0.17 },             // 取り出し口の上
+    limit: { x0: -0.27, x1: 0.31, z0: -0.23, z1: 0.17 },
+    board: { cx: 0.0, cz: -0.01, hx: 0.22, hz: 0.13, thick: 0.012, top: 0.46 },
+    stand: { cx: 0.0, cz: -0.01, hx: 0.17, hz: 0.11, top: 0.165 },
+    prize: { w: 0.22, h: 0.135, d: 0.13 },
+    chute: { x0: -0.355, x1: -0.19, z0: 0.04, z1: 0.275 },
+  };
+
+  // 本の第3章「100円入れる前に見る7つのところ」に合わせた設定の選択肢
+  const OPTIONS = {
+    ringSize: { small: 0.040, mid: 0.048, big: 0.060 },         // 外径
+    ringThick: { thin: 0.0024, mid: 0.0032, thick: 0.0048 },     // 線の半径
+    ringWeight: { light: 0.012, mid: 0.025, heavy: 0.05 },
+    descent: { edge: 0.006, normal: -0.035, deep: -0.08 },       // 着く高さからの差
+    tilt: { none: [0, 0], front: [2.5, 0], back: [-2.5, 0], left: [0, 2.5], right: [0, -2.5] },
+    drive: {
+      brisk: { accel: 6.0, wave: 0 },      // きびきび：止まる・動くがはっきり（よくゆれる）
+      smooth: { accel: 0.28, wave: 0 },    // なめらか：ゆれが育ちにくい
+      wavy: { accel: 0.5, wave: 0.2 },     // 波打つ：速さが波のように変わる
+    },
+  };
+
+  const DEFAULT_SETUP = {
+    prizePrice: 1500,
+    ringSize: 'mid', ringThick: 'mid', ringWeight: 'mid',
+    chainLen: 0.22, rootSwing: false,
+    hookType: 'q', hookDir: 'left', hookYaw: 0, hookX: 0.03, hookZ: -0.01,
+    tilt: 'none', slippery: false,
+    descent: 'normal', descentButton: false,
+    drive: 'brisk', speed: 0.12, drift: false,
+  };
+
+  // ---------------------------------------------------------------- 小さな数学
+  function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+  function cross(a, b, o) {
+    const x = a[1] * b[2] - a[2] * b[1], y = a[2] * b[0] - a[0] * b[2], z = a[0] * b[1] - a[1] * b[0];
+    o[0] = x; o[1] = y; o[2] = z; return o;
+  }
+  function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+  function mulMV(m, v, o) {
+    const x = v[0], y = v[1], z = v[2];
+    o[0] = m[0] * x + m[1] * y + m[2] * z; o[1] = m[3] * x + m[4] * y + m[5] * z; o[2] = m[6] * x + m[7] * y + m[8] * z; return o;
+  }
+  function mulMtV(m, v, o) {
+    const x = v[0], y = v[1], z = v[2];
+    o[0] = m[0] * x + m[3] * y + m[6] * z; o[1] = m[1] * x + m[4] * y + m[7] * z; o[2] = m[2] * x + m[5] * y + m[8] * z; return o;
+  }
+  function matMul(a, b) {
+    const o = new Float64Array(9);
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) o[r * 3 + c] = a[r * 3] * b[c] + a[r * 3 + 1] * b[3 + c] + a[r * 3 + 2] * b[6 + c];
+    return o;
+  }
+  function rotX(deg) { const a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a); return Float64Array.of(1, 0, 0, 0, c, -s, 0, s, c); }
+  function rotY(deg) { const a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a); return Float64Array.of(c, 0, s, 0, 1, 0, -s, 0, c); }
+  function rotZ(deg) { const a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a); return Float64Array.of(c, -s, 0, s, c, 0, 0, 0, 1); }
+  function quatToMat(q, m) {
+    const x = q[0], y = q[1], z = q[2], w = q[3];
+    const xx = x * x, yy = y * y, zz = z * z, xy = x * y, xz = x * z, yz = y * z, wx = w * x, wy = w * y, wz = w * z;
+    m[0] = 1 - 2 * (yy + zz); m[1] = 2 * (xy - wz); m[2] = 2 * (xz + wy);
+    m[3] = 2 * (xy + wz); m[4] = 1 - 2 * (xx + zz); m[5] = 2 * (yz - wx);
+    m[6] = 2 * (xz - wy); m[7] = 2 * (yz + wx); m[8] = 1 - 2 * (xx + yy);
+  }
+  function quatNormalize(q) {
+    const l = Math.sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
+    q[0] /= l; q[1] /= l; q[2] /= l; q[3] /= l;
+  }
+  // q += 0.5 * [w,0] * q
+  function quatRotate(q, wx, wy, wz) {
+    const qx = q[0], qy = q[1], qz = q[2], qw = q[3];
+    q[0] += 0.5 * (wx * qw + wy * qz - wz * qy);
+    q[1] += 0.5 * (wy * qw + wz * qx - wx * qz);
+    q[2] += 0.5 * (wz * qw + wx * qy - wy * qx);
+    q[3] += 0.5 * (-wx * qx - wy * qy - wz * qz);
+    quatNormalize(q);
+  }
+  function quatFromAxisAngle(ax, ay, az, a) {
+    const s = Math.sin(a / 2); return [ax * s, ay * s, az * s, Math.cos(a / 2)];
+  }
+
+  // 線分どうしの最近点（Ericson 5.1.9）
+  const SS = { s: 0, t: 0, c1: [0, 0, 0], c2: [0, 0, 0] };
+  function segSeg(p1, q1, p2, q2) {
+    const d1x = q1[0] - p1[0], d1y = q1[1] - p1[1], d1z = q1[2] - p1[2];
+    const d2x = q2[0] - p2[0], d2y = q2[1] - p2[1], d2z = q2[2] - p2[2];
+    const rx = p1[0] - p2[0], ry = p1[1] - p2[1], rz = p1[2] - p2[2];
+    const a = d1x * d1x + d1y * d1y + d1z * d1z, e = d2x * d2x + d2y * d2y + d2z * d2z;
+    const f = d2x * rx + d2y * ry + d2z * rz;
+    let s, t;
+    if (a <= EPS && e <= EPS) { s = 0; t = 0; }
+    else if (a <= EPS) { s = 0; t = clamp(f / e, 0, 1); }
+    else {
+      const c = d1x * rx + d1y * ry + d1z * rz;
+      if (e <= EPS) { t = 0; s = clamp(-c / a, 0, 1); }
+      else {
+        const b = d1x * d2x + d1y * d2y + d1z * d2z, den = a * e - b * b;
+        s = den > EPS ? clamp((b * f - c * e) / den, 0, 1) : 0;
+        t = (b * s + f) / e;
+        if (t < 0) { t = 0; s = clamp(-c / a, 0, 1); }
+        else if (t > 1) { t = 1; s = clamp((b - c) / a, 0, 1); }
+      }
+    }
+    SS.s = s; SS.t = t;
+    SS.c1[0] = p1[0] + d1x * s; SS.c1[1] = p1[1] + d1y * s; SS.c1[2] = p1[2] + d1z * s;
+    SS.c2[0] = p2[0] + d2x * t; SS.c2[1] = p2[1] + d2y * t; SS.c2[2] = p2[2] + d2z * t;
+    return SS;
+  }
+  // 点と線分の最近点
+  const PS = { t: 0, c: [0, 0, 0] };
+  function pointSeg(p, a, b) {
+    const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+    const l2 = dx * dx + dy * dy + dz * dz;
+    let t = l2 > EPS ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy + (p[2] - a[2]) * dz) / l2 : 0;
+    t = clamp(t, 0, 1);
+    PS.t = t; PS.c[0] = a[0] + dx * t; PS.c[1] = a[1] + dy * t; PS.c[2] = a[2] + dz * t;
+    return PS;
+  }
+  // 球と向きつきの箱。当たっていれば法線（箱→球）と深さを返す
+  const SB = { n: [0, 0, 0], d: 0 };
+  const _l = [0, 0, 0], _nl = [0, 0, 0];
+  function sphereBox(p, r, box, lift, up) {
+    _l[0] = p[0] - box.c[0] - up[0] * lift; _l[1] = p[1] - box.c[1] - up[1] * lift; _l[2] = p[2] - box.c[2] - up[2] * lift;
+    mulMtV(box.R, _l, _l);
+    const hx = box.h[0], hy = box.h[1], hz = box.h[2];
+    if (Math.abs(_l[0]) > hx + r || Math.abs(_l[1]) > hy + r || Math.abs(_l[2]) > hz + r) return null;
+    const cx = clamp(_l[0], -hx, hx), cy = clamp(_l[1], -hy, hy), cz = clamp(_l[2], -hz, hz);
+    let dx = _l[0] - cx, dy = _l[1] - cy, dz = _l[2] - cz;
+    let dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (dist > EPS) {
+      if (dist >= r) return null;
+      _nl[0] = dx / dist; _nl[1] = dy / dist; _nl[2] = dz / dist; SB.d = r - dist;
+    } else {
+      // 中心が箱の中：いちばん近い面から押し出す
+      const ex = hx - Math.abs(_l[0]), ey = hy - Math.abs(_l[1]), ez = hz - Math.abs(_l[2]);
+      _nl[0] = _nl[1] = _nl[2] = 0;
+      if (ey <= ex && ey <= ez) { _nl[1] = _l[1] >= 0 ? 1 : -1; SB.d = ey + r; }
+      else if (ex <= ez) { _nl[0] = _l[0] >= 0 ? 1 : -1; SB.d = ex + r; }
+      else { _nl[2] = _l[2] >= 0 ? 1 : -1; SB.d = ez + r; }
+    }
+    mulMV(box.R, _nl, SB.n);
+    return SB;
+  }
+
+  // ---------------------------------------------------------------- フックの形
+  // フック自身の座標：原点は板の上面、y が上、開いた側が -x。
+  function hookLocal(type, dims) {
+    dims = Object.assign({ y0: 0.027, end: 210, Rh: 0.0128 }, dims || {});
+    const parts = { wire: [], boxes: [], caps: [], loop: null };
+    parts.boxes.push({ c: [0, 0.0075, 0], h: [0.017, 0.0075, 0.012], kind: 'base' });   // 黄色い台形の土台
+    parts.caps.push({ a: [0, 0.015, 0], b: [0, 0.021, 0], r: 0.0055, kind: 'collar' }); // グレーの軸受け
+    if (type === 'L') {
+      const pts = [[0, 0.015, 0], [0, 0.046, 0], [-0.002, 0.0495, 0], [-0.006, 0.0505, 0], [-0.031, 0.0505, 0], [-0.035, 0.053, 0], [-0.037, 0.059, 0]];
+      for (let i = 0; i < pts.length - 1; i++) parts.wire.push([pts[i], pts[i + 1]]);
+    } else {
+      // 「？」の形：軸の上に、左下だけが開いたほぼ丸い輪
+      const Rh = dims.Rh, y0 = dims.y0, end = dims.end;
+      parts.wire.push([[0, 0.015, 0], [0, y0, 0]]);
+      let prev = [0, y0, 0];
+      const steps = Math.ceil((end + 90) / 12);
+      for (let i = 1; i <= steps; i++) {
+        const a = -90 + (end + 90) * i / steps;
+        const r = a * Math.PI / 180, p = [Rh * Math.cos(r), y0 + Rh + Rh * Math.sin(r), 0];
+        parts.wire.push([prev, p]); prev = p;
+      }
+      parts.loop = { c: [0, y0 + Rh, 0], Rh };
+    }
+    return parts;
+  }
+
+  // ---------------------------------------------------------------- 本体
+  class HookMachine {
+    constructor(setup) {
+      this.events = [];
+      this.credits = 0; this.spent = 0; this.gets = 0; this.playNo = 0;
+      this.log = [];
+      this.applySetup(setup || {});
+    }
+
+    emit(type, data) { this.events.push(Object.assign({ type, t: this.time }, data || {})); }
+    drainEvents() { const e = this.events; this.events = []; return e; }
+
+    applySetup(setup) {
+      // 遊んでいる途中（ボタンを押す前）なら、そのクレジットのまま台だけ替える
+      const keep = this.state === 'ready' ? this.play : null;
+      this.setup = Object.assign({}, DEFAULT_SETUP, setup);
+      this.jitter = [0, 0];
+      this.build();
+      this.resetBodies();
+      this.state = keep ? 'ready' : 'idle';
+      this.play = keep;
+      this.stateT = 0;
+      this.emit('geometry');
+    }
+
+    // 寸法をつくる
+    build() {
+      const s = this.setup, W = WORLD;
+      const P = this.P = {};
+      P.D = s.ringD || OPTIONS.ringSize[s.ringSize]; P.rt = OPTIONS.ringThick[s.ringThick];
+      P.Rc = P.D / 2 - P.rt; P.M = OPTIONS.ringWeight[s.ringWeight] * (P.D / 0.048);
+      P.Iin = 0.5 * P.M * P.Rc * P.Rc;   // 輪の面内の軸
+      P.Iax = P.M * P.Rc * P.Rc;         // 輪の中心軸
+      P.chainLen = s.chainLen; P.linkLen = 0.014;
+      P.N = Math.max(4, Math.round(s.chainLen / P.linkLen));
+      P.linkLen = s.chainLen / P.N;
+      P.chainR = 0.0016; P.mLink = 0.03 * P.linkLen;
+      P.rootLen = s.rootSwing ? 0.028 : 0;
+      P.mu = s.slippery ? { s: 0.14, k: 0.09 } : { s: 0.42, k: 0.3 };
+      P.muHook = { s: 0.25, k: 0.18 };
+      P.drive = OPTIONS.drive[s.drive];
+      P.speed = s.speed;
+      P.vDown = 0.11; P.vUp = 0.09;
+      P.liftWin = 0.02; P.liftMax = 0.05; P.Mb = 0.12;
+
+      // 板
+      const t = OPTIONS.tilt[s.tilt];
+      const Rb = matMul(rotX(t[0]), rotZ(t[1]));
+      const B = W.board;
+      const bc = [B.cx, B.top - B.thick / 2, B.cz];
+      P.U = mulMV(Rb, [0, 1, 0], [0, 0, 0]);
+      P.boardBox = { c: bc, R: Rb, h: [B.hx, B.thick / 2, B.hz] };
+      P.boardR = Rb;
+
+      // フック
+      const yaw0 = { left: 0, right: 180, back: -90, front: 90 }[s.hookDir] || 0;
+      const Rh = matMul(Rb, rotY(yaw0 + s.hookYaw));
+      const spots = s.hookType === 'triple' ? [-0.075, 0, 0.075] : [0];
+      P.hooks = spots.map((dz) => {
+        const hx = s.hookX + this.jitter[0], hz = s.hookZ + dz + this.jitter[1];
+        const local = [hx - B.cx, B.thick / 2, hz - B.cz];
+        const origin = mulMV(Rb, local, [0, 0, 0]);
+        origin[0] += bc[0]; origin[1] += bc[1]; origin[2] += bc[2];
+        const lp = hookLocal(s.hookType === 'triple' ? 'q' : s.hookType, s.hookDims);
+        const toW = (p) => { const o = mulMV(Rh, p, [0, 0, 0]); o[0] += origin[0]; o[1] += origin[1]; o[2] += origin[2]; return o; };
+        const wire = lp.wire.map(([a, b]) => [toW(a), toW(b)]);
+        const boxes = lp.boxes.map((bx) => ({ c: toW(bx.c), R: Rh, h: bx.h, kind: bx.kind }));
+        const caps = lp.caps.map((c) => ({ a: toW(c.a), b: toW(c.b), r: c.r, kind: c.kind }));
+        const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+        for (const [a, b] of wire) for (const p of [a, b]) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], p[k]); hi[k] = Math.max(hi[k], p[k]); }
+        for (const bx of boxes) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], bx.c[k] - 0.02); hi[k] = Math.max(hi[k], bx.c[k] + 0.02); }
+        return {
+          origin, R: Rh, wire, boxes, caps, lo, hi, rw: 0.0022, type: s.hookType === 'triple' ? 'q' : s.hookType,
+          loop: lp.loop ? { c: toW(lp.loop.c), Rh: lp.loop.Rh } : null,
+          open: mulMV(Rh, [-1, 0, 0], [0, 0, 0]),
+        };
+      });
+
+      // 下降の深さ：つり下がったリングの下端がちょうど板に着く根元の高さを基準にする
+      P.touchY = B.top + P.chainLen + P.rootLen + 2 * P.Rc + P.rt;
+      P.bottomY = P.touchY + OPTIONS.descent[s.descent];
+      P.omega = Math.sqrt(G / (P.chainLen + P.rootLen + P.Rc));
+    }
+
+    resetBodies() {
+      const P = this.P;
+      this.time = 0;
+      this.head = [WORLD.home.x, WORLD.headTop, WORLD.home.z];
+      this.headV = [0, 0, 0];
+      this.drift = [0, 0];
+      // 点 0 が根元（ゆれる根元なら本体から短くぶら下がる部品）、点 N がリングの通る最後の輪
+      const n = P.N + 1;
+      this.np = n;
+      this.x = []; this.xp = []; this.v = []; this.w = [];
+      for (let i = 0; i < n; i++) {
+        this.x.push([this.head[0], WORLD.headTop - P.rootLen - i * P.linkLen, this.head[2]]);
+        this.xp.push(this.x[i].slice());
+        this.v.push([0, 0, 0]);
+        this.w.push(1 / P.mLink);
+      }
+      this.w[0] = P.rootLen > 0 ? 1 / 0.06 : 0;
+      this.w[n - 1] = 1 / (P.mLink * 2);
+      this.won = false;
+      // リング：鎖の最後の輪に通っていて、面は左右（x 軸まわり）を向いて下がる
+      const end = this.x[n - 1];
+      const twist = (Math.random() - 0.5) * 0.6;
+      const q = quatFromAxisAngle(0, 1, 0, Math.PI / 2 + twist);
+      this.ring = {
+        c: [end[0], end[1] - P.Rc, end[2]], q, v: [0, 0, 0], w: [0, 0, 0],
+        cp: [0, 0, 0], qp: [0, 0, 0, 1], R: new Float64Array(9), Rp: new Float64Array(9),
+        vs: [0, 0, 0], ws: [0, 0, 0],
+      };
+      quatToMat(q, this.ring.R);
+      const K = this.K = 24;
+      this.samples = [];
+      for (let k = 0; k < K; k++) { const a = (k / K) * Math.PI * 2; this.samples.push([P.Rc * Math.cos(a), P.Rc * Math.sin(a), 0]); }
+      this.sw = this.samples.map(() => [0, 0, 0]);
+      this.board = { b: 0, bp: 0, vb: 0, off: false };
+      this.prize = 'on';
+      this.contacts = [];
+      this.play = null;
+      this.peak = { hook: 0, board: 0, chain: 0 };
+      this.settle(1.5);
+    }
+
+    // しばらく静かに置いて形を落ち着かせる
+    settle(sec) {
+      const st = this.state; this.state = 'settling';
+      for (let t = 0; t < sec; t += H) this.substep(H);
+      this.state = st; this.time = 0;
+      this.peak = { hook: 0, board: 0, chain: 0 };
+      this.events = this.events.filter((e) => e.type === 'geometry');
+    }
+
+    // ------------------------------------------------------------ 操作
+    insert(yen) {
+      const plays = yen === 500 ? 6 : 1;
+      this.credits += plays; this.spent += yen;
+      this.emit('coin', { yen, plays });
+      if (this.state === 'idle') this.enter('ready');
+    }
+    press(n) {
+      if (n === 1 && this.state === 'ready') { this.enter('movex'); this.recPress(1); }
+      else if (n === 2 && this.state === 'waitz') { this.enter('movez'); this.recPress(2); }
+      else if (n === 3 && this.state === 'waitdown') { this.enter('descend'); }
+      else if (n === 3 && this.state === 'descend' && this.setup.descentButton && this.stateT > 0.15) { this.emit('stop-descent'); this.enter('bottom'); }
+    }
+    release(n) {
+      if (n === 1 && this.state === 'movex') { this.recRelease(1); this.enter('waitz'); }
+      else if (n === 2 && this.state === 'movez') { this.recRelease(2); this.enter(this.setup.descentButton ? 'waitdown' : 'predesc'); }
+    }
+
+    enter(state) {
+      this.state = state; this.stateT = 0;
+      if (state === 'ready') {
+        this.credits -= 1; this.playNo += 1;
+        this.play = { no: this.playNo, hold: [0, 0], pressK: [null, null], releaseK: [null, null], landing: null, topHit: false, hookTouch: false, maxLift: 0, result: '' };
+      }
+      this.emit('state', { state });
+    }
+
+    // ゆれ時計：根元から見たリングの位置と速さを、本の①〜⑤の時計にする
+    swingClock(axis) {
+      const P = this.P, r = this.ring;
+      const k = axis === 'z' ? 2 : 0;
+      const root = this.x[0];
+      const u = r.c[k] - root[k];
+      const ud = r.v[k] - (this.x[0][k] - this.xp[0][k]) / H;
+      const amp = Math.sqrt(u * u + (ud / P.omega) * (ud / P.omega));
+      let phi = Math.atan2(-ud / P.omega, u) * 180 / Math.PI;
+      if (phi < 0) phi += 360;
+      return { phi, amp, u };
+    }
+    static clockLabel(phi) {
+      const pts = [[0, 1], [45, 2], [90, 3], [180, 4], [225, 5], [360, 1]];
+      let best = pts[0], bd = 1e9;
+      for (const p of pts) { const d = Math.abs(phi - p[0]); if (d < bd) { bd = d; best = p; } }
+      return best[1];
+    }
+    recPress(n) {
+      if (!this.play) return;
+      const c = this.swingClock(n === 1 ? 'x' : 'z');
+      this.play.pressK[n - 1] = { no: HookMachine.clockLabel(c.phi), phi: c.phi, amp: c.amp };
+      this.play.holdStart = this.time;
+    }
+    recRelease(n) {
+      if (!this.play) return;
+      const c = this.swingClock(n === 1 ? 'x' : 'z');
+      this.play.releaseK[n - 1] = { no: HookMachine.clockLabel(c.phi), phi: c.phi, amp: c.amp };
+      this.play.hold[n - 1] = this.time - this.play.holdStart;
+    }
+
+    // ------------------------------------------------------------ 時間を進める
+    advance(dt) {
+      this.acc = (this.acc || 0) + dt;
+      let n = 0;
+      while (this.acc >= H && n < 200) { this.substep(H); this.acc -= H; n++; }
+      if (n >= 200) this.acc = 0;
+    }
+
+    updateHead(h) {
+      const P = this.P, W = WORLD, st = this.state;
+      this.stateT += h; this.time += h;
+      let tvx = 0, tvz = 0;
+      const sp = P.speed * (1 + P.drive.wave * Math.sin(this.time * 2 * Math.PI * 1.4));
+      if (st === 'movex') tvx = sp;
+      if (st === 'movez') tvz = -sp;
+      if (st === 'return') {
+        const dx = W.home.x - this.head[0], dz = W.home.z - this.head[2];
+        const ret = 0.14, brake = (v) => Math.sign(v) * Math.min(ret, Math.sqrt(2 * Math.max(P.drive.accel, 0.5) * Math.abs(v) * 0.9));
+        tvx = Math.abs(dx) > 0.0005 ? brake(dx) : 0;
+        tvz = Math.abs(dz) > 0.0005 ? brake(dz) : 0;
+        if (Math.abs(dx) <= 0.0005 && Math.abs(dz) <= 0.0005) { this.head[0] = W.home.x; this.head[2] = W.home.z; this.headV[0] = this.headV[2] = 0; this.finishPlay(); }
+      }
+      const acc = P.drive.accel * h;
+      this.headV[0] += clamp(tvx - this.headV[0], -acc, acc);
+      this.headV[2] += clamp(tvz - this.headV[2], -acc, acc);
+      this.head[0] += this.headV[0] * h; this.head[2] += this.headV[2] * h;
+      const L = W.limit;
+      if (this.head[0] > L.x1) { this.head[0] = L.x1; this.headV[0] = 0; }
+      if (this.head[0] < L.x0) { this.head[0] = L.x0; this.headV[0] = 0; }
+      if (this.head[2] < L.z0) { this.head[2] = L.z0; this.headV[2] = 0; }
+      if (this.head[2] > L.z1) { this.head[2] = L.z1; this.headV[2] = 0; }
+
+      // 上下
+      if (st === 'predesc' && this.stateT > 0.45) this.enter('descend');
+      if (st === 'ready' && this.stateT > 30) { this.recPress(1); this.recRelease(1); this.enter('waitz'); }
+      if (st === 'waitz' && this.stateT > 30) { this.enter('predesc'); }
+      if (st === 'waitdown' && this.stateT > 10) { this.enter('descend'); }
+      if (st === 'descend') {
+        this.head[1] -= P.vDown * h;
+        if (this.head[1] <= P.bottomY) { this.head[1] = P.bottomY; this.enter('bottom'); }
+      }
+      if (st === 'bottom' && this.stateT > 0.6) this.enter('ascend');
+      if (st === 'ascend') {
+        this.head[1] += P.vUp * h;
+        if (this.head[1] >= W.headTop) { this.head[1] = W.headTop; this.enter('toppause'); }
+      }
+      if (st === 'toppause' && this.stateT > 0.35) this.enter('return');
+
+      // 下りると上がるのずれ：ケーブルに引かれて「く」の字に動く
+      const depth = clamp((W.headTop - this.head[1]) / Math.max(0.01, W.headTop - P.bottomY), 0, 1);
+      if (this.setup.drift) {
+        const goingUp = st === 'ascend' || st === 'toppause';
+        this.drift[0] = 0.009 * Math.sin(depth * Math.PI / 2);
+        this.drift[1] = goingUp ? 0.006 * Math.sin(depth * Math.PI) : 0;
+      } else { this.drift[0] = 0; this.drift[1] = 0; }
+    }
+
+    finishPlay() {
+      const p = this.play;
+      if (p) {
+        if (this.won) p.result = 'get';
+        else if (p.maxLift > 0.003) p.result = 'lift';
+        else if (p.topHit) p.result = 'top';
+        else if (p.hookTouch) p.result = 'touch';
+        else p.result = 'miss';
+        this.log.unshift(p);
+        this.emit('result', { play: p });
+      }
+      this.play = null;
+      if (this.won) { this.won = false; this.enter('restock'); return; }
+      this.enter(this.credits > 0 ? 'ready' : 'idle');
+    }
+
+    // 店員さんが景品を補充して、板を置き直す（少しだけずれる）
+    restock() {
+      this.jitter = [(Math.random() - 0.5) * 0.008, (Math.random() - 0.5) * 0.008];
+      this.build(); this.resetBodies();
+      this.emit('geometry'); this.emit('restocked');
+      this.enter(this.credits > 0 ? 'ready' : 'idle');
+    }
+
+    // ------------------------------------------------------------ 1刻み
+    substep(h) {
+      const P = this.P, r = this.ring, x = this.x, xp = this.xp, v = this.v, w = this.w, np = this.np;
+      if (this.state === 'restock') { this.stateT += h; this.time += h; if (this.stateT > 2.2) this.restock(); return; }
+      if (this.state !== 'settling') this.updateHead(h);
+      const hx = this.head[0] + this.drift[0], hy = this.head[1], hz = this.head[2] + this.drift[1];
+
+      // 予測
+      const airC = 1 - 0.6 * h;
+      for (let i = 0; i < np; i++) {
+        xp[i][0] = x[i][0]; xp[i][1] = x[i][1]; xp[i][2] = x[i][2];
+        if (w[i] === 0) continue;
+        v[i][1] -= G * h;
+        v[i][0] *= airC; v[i][1] *= airC; v[i][2] *= airC;
+        x[i][0] += v[i][0] * h; x[i][1] += v[i][1] * h; x[i][2] += v[i][2] * h;
+      }
+      if (P.rootLen === 0) { x[0][0] = hx; x[0][1] = hy; x[0][2] = hz; }
+      r.cp[0] = r.c[0]; r.cp[1] = r.c[1]; r.cp[2] = r.c[2];
+      r.qp[0] = r.q[0]; r.qp[1] = r.q[1]; r.qp[2] = r.q[2]; r.qp[3] = r.q[3];
+      r.Rp.set(r.R);
+      r.vs[0] = r.v[0]; r.vs[1] = r.v[1]; r.vs[2] = r.v[2];
+      r.ws[0] = r.w[0]; r.ws[1] = r.w[1]; r.ws[2] = r.w[2];
+      r.v[1] -= G * h;
+      const lin = 1 - 0.12 * h, ang = 1 - 0.8 * h;
+      r.v[0] *= lin; r.v[1] *= lin; r.v[2] *= lin; r.w[0] *= ang; r.w[1] *= ang; r.w[2] *= ang;
+      r.c[0] += r.v[0] * h; r.c[1] += r.v[1] * h; r.c[2] += r.v[2] * h;
+      quatRotate(r.q, r.w[0] * h, r.w[1] * h, r.w[2] * h);
+      quatToMat(r.q, r.R);
+      const bd = this.board;
+      bd.bp = bd.b; const vbs = bd.vb;
+      bd.vb -= G * h; bd.b += bd.vb * h;
+
+      // 鎖
+      if (P.rootLen > 0) this.distToFixed(0, hx, hy, hz, P.rootLen);
+      for (let i = 0; i < np - 1; i++) this.dist(i, i + 1, P.linkLen);
+      this.ringAttach();
+      for (let i = np - 2; i >= 0; i--) this.dist(i, i + 1, P.linkLen);
+      // つなぎ止め：根元からそれ以上は離れない
+      for (let i = 1; i < np; i++) this.tether(i, hx, hy, hz, (P.rootLen + i * P.linkLen) * 1.0005);
+      this.ringAttach();
+
+      // 板の上下の範囲
+      if (bd.b < 0) { bd.b = 0; }
+      if (bd.b > P.liftMax) bd.b = P.liftMax;
+
+      // 当たり
+      this.contacts.length = 0;
+      this.collideRing(h);
+      this.collideChain();
+      if (bd.b < 0) bd.b = 0;
+
+      // 速度
+      for (let i = 0; i < np; i++) {
+        if (w[i] === 0) { v[i][0] = (x[i][0] - xp[i][0]) / h; v[i][1] = (x[i][1] - xp[i][1]) / h; v[i][2] = (x[i][2] - xp[i][2]) / h; continue; }
+        v[i][0] = (x[i][0] - xp[i][0]) / h; v[i][1] = (x[i][1] - xp[i][1]) / h; v[i][2] = (x[i][2] - xp[i][2]) / h;
+      }
+      r.v[0] = (r.c[0] - r.cp[0]) / h; r.v[1] = (r.c[1] - r.cp[1]) / h; r.v[2] = (r.c[2] - r.cp[2]) / h;
+      // dq = q * qp^-1
+      {
+        const ax = r.q[0], ay = r.q[1], az = r.q[2], aw = r.q[3];
+        const bx = -r.qp[0], by = -r.qp[1], bz = -r.qp[2], bw = r.qp[3];
+        let dx = aw * bx + ax * bw + ay * bz - az * by;
+        let dy = aw * by - ax * bz + ay * bw + az * bx;
+        let dz = aw * bz + ax * by - ay * bx + az * bw;
+        const dw = aw * bw - ax * bx - ay * by - az * bz;
+        const sgn = dw >= 0 ? 1 : -1;
+        r.w[0] = 2 * dx * sgn / h; r.w[1] = 2 * dy * sgn / h; r.w[2] = 2 * dz * sgn / h;
+      }
+      bd.vb = (bd.b - bd.bp) / h;
+      if (bd.b <= 0 && bd.vb < 0) bd.vb = 0;
+      this.restitution(vbs);
+
+      // 景品の判定
+      if (this.play && (this.state === 'ascend' || this.state === 'toppause' || this.state === 'return' || this.state === 'bottom')) {
+        this.play.maxLift = Math.max(this.play.maxLift, bd.b);
+      }
+      if (!this.won && bd.b >= P.liftWin && this.play) { this.won = true; this.gets += 1; this.prize = 'falling'; this.emit('win'); }
+      // 板が上の止めに当たったら、本体は上がれずに止まる（パワー切れ）。そのあと取り出し口の上へもどる
+      if (this.state === 'ascend' && bd.b >= P.liftMax - 0.0015) { this.emit('stall'); this.enter('toppause'); }
+      // もどる途中で、たいていリングはフックの開いた側から抜ける。抜けないときは板が傾いて外れたことにする
+      if (!bd.off && this.state === 'return' && this.stateT > 1.4 && bd.b > 0.008) { bd.off = true; this.emit('board-release'); }
+      if (bd.b > 0.006) bd.raised = true;
+      if (bd.raised && bd.b <= 0.0005 && !bd.dropped) { bd.dropped = true; this.emit('board-drop'); }
+    }
+
+    // 2点の距離をそろえる
+    dist(i, j, L) {
+      const a = this.x[i], b = this.x[j], wi = this.w[i], wj = this.w[j];
+      const ws = wi + wj; if (ws === 0) return;
+      const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz); if (d < EPS) return;
+      const k = (d - L) / (d * ws);
+      a[0] += dx * k * wi; a[1] += dy * k * wi; a[2] += dz * k * wi;
+      b[0] -= dx * k * wj; b[1] -= dy * k * wj; b[2] -= dz * k * wj;
+    }
+    distToFixed(i, fx, fy, fz, L) {
+      const a = this.x[i];
+      const dx = a[0] - fx, dy = a[1] - fy, dz = a[2] - fz;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz); if (d < EPS) return;
+      const k = (d - L) / d;
+      a[0] -= dx * k; a[1] -= dy * k; a[2] -= dz * k;
+    }
+    tether(i, fx, fy, fz, L) {
+      const a = this.x[i];
+      const dx = a[0] - fx, dy = a[1] - fy, dz = a[2] - fz;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (d <= L) return;
+      const k = (d - L) / d;
+      a[0] -= dx * k; a[1] -= dy * k; a[2] -= dz * k;
+    }
+
+    // ---- 剛体（リング）への位置の補正
+    invInertiaW(vx, vy, vz, o) {
+      // R * Iloc^-1 * R^T * v
+      const R = this.ring.R, P = this.P;
+      const lx = R[0] * vx + R[3] * vy + R[6] * vz, ly = R[1] * vx + R[4] * vy + R[7] * vz, lz = R[2] * vx + R[5] * vy + R[8] * vz;
+      const ix = lx / P.Iin, iy = ly / P.Iin, iz = lz / P.Iax;
+      o[0] = R[0] * ix + R[1] * iy + R[2] * iz; o[1] = R[3] * ix + R[4] * iy + R[5] * iz; o[2] = R[6] * ix + R[7] * iy + R[8] * iz;
+      return o;
+    }
+    genInvMass(p, n) {
+      const c = this.ring.c;
+      const rx = p[0] - c[0], ry = p[1] - c[1], rz = p[2] - c[2];
+      const cx = ry * n[2] - rz * n[1], cy = rz * n[0] - rx * n[2], cz = rx * n[1] - ry * n[0];
+      const t = this.invInertiaW(cx, cy, cz, _gi);
+      return 1 / this.P.M + cx * t[0] + cy * t[1] + cz * t[2];
+    }
+    applyRing(p, px, py, pz) {
+      const r = this.ring, M = this.P.M;
+      const rx = p[0] - r.c[0], ry = p[1] - r.c[1], rz = p[2] - r.c[2];
+      r.c[0] += px / M; r.c[1] += py / M; r.c[2] += pz / M;
+      const cx = ry * pz - rz * py, cy = rz * px - rx * pz, cz = rx * py - ry * px;
+      const t = this.invInertiaW(cx, cy, cz, _gi);
+      quatRotate(r.q, t[0], t[1], t[2]);
+      quatToMat(r.q, r.R);
+    }
+    ringPoint(k, o) {
+      const r = this.ring; mulMV(r.R, this.samples[k], o);
+      o[0] += r.c[0]; o[1] += r.c[1]; o[2] += r.c[2]; return o;
+    }
+
+    // 鎖のいちばん下の輪にリングが通っている：輪はリングの線の上を自由にすべる
+    ringAttach() {
+      const P = this.P, r = this.ring, e = this.x[this.np - 1], we = this.w[this.np - 1];
+      const R = r.R;
+      // リングの面への射影
+      const dx = e[0] - r.c[0], dy = e[1] - r.c[1], dz = e[2] - r.c[2];
+      const ax = R[2], ay = R[5], az = R[8];
+      const an = dx * ax + dy * ay + dz * az;
+      let px = dx - ax * an, py = dy - ay * an, pz = dz - az * an;
+      let pl = Math.sqrt(px * px + py * py + pz * pz);
+      if (pl < EPS) { px = R[1]; py = R[4]; pz = R[7]; pl = 1; }
+      const cp = _cp; cp[0] = r.c[0] + px / pl * P.Rc; cp[1] = r.c[1] + py / pl * P.Rc; cp[2] = r.c[2] + pz / pl * P.Rc;
+      const gx = e[0] - cp[0], gy = e[1] - cp[1], gz = e[2] - cp[2];
+      const d = Math.sqrt(gx * gx + gy * gy + gz * gz);
+      const slack = 0.0015;
+      if (d <= slack) return;
+      const n = _n; n[0] = gx / d; n[1] = gy / d; n[2] = gz / d;
+      const wr = this.genInvMass(cp, n);
+      const lam = (d - slack) / (we + wr);
+      e[0] -= n[0] * lam * we; e[1] -= n[1] * lam * we; e[2] -= n[2] * lam * we;
+      this.applyRing(cp, n[0] * lam, n[1] * lam, n[2] * lam);
+    }
+
+    // 板が動けるか（上には上限、下にはレール）
+    boardFree(dirUp) {
+      const b = this.board.b, P = this.P;
+      if (dirUp > 0) return b < P.liftMax;
+      return b > 1e-7;
+    }
+
+    // リングの1点に当たりを返す共通処理
+    resolveRing(p, n, d, kind, hookAttached, mu) {
+      const P = this.P, r = this.ring, bd = this.board;
+      const wr = this.genInvMass(p, n);
+      let wb = 0, nu = 0;
+      if (hookAttached) {
+        nu = n[0] * P.U[0] + n[1] * P.U[1] + n[2] * P.U[2];
+        // 板は -n の向きに押される
+        if (Math.abs(nu) > 1e-6 && this.boardFree(-nu)) wb = nu * nu / P.Mb;
+      }
+      // 当たる前の速さ（はね返りと音のため）
+      const rx = p[0] - r.c[0], ry = p[1] - r.c[1], rz = p[2] - r.c[2];
+      const vpx = r.vs[0] + r.ws[1] * rz - r.ws[2] * ry, vpy = r.vs[1] + r.ws[2] * rx - r.ws[0] * rz, vpz = r.vs[2] + r.ws[0] * ry - r.ws[1] * rx;
+      const vbU = hookAttached ? bd.vb : 0;
+      const vnPre = vpx * n[0] + vpy * n[1] + vpz * n[2] - vbU * nu;
+      const lam = d / (wr + wb);
+      this.applyRing(p, n[0] * lam, n[1] * lam, n[2] * lam);
+      if (wb > 0) bd.b -= lam * nu / P.Mb;
+
+      // 摩擦：この刻みでの、当たっている点どうしのずれを止める
+      const rl = mulMtV(r.R, [p[0] - r.c[0], p[1] - r.c[1], p[2] - r.c[2]], _rl);
+      const pc = mulMV(r.R, rl, _pc); pc[0] += r.c[0]; pc[1] += r.c[1]; pc[2] += r.c[2];
+      const pp = mulMV(r.Rp, rl, _pp); pp[0] += r.cp[0]; pp[1] += r.cp[1]; pp[2] += r.cp[2];
+      const surf = hookAttached || kind === 'board' ? (bd.b - bd.bp) : 0;
+      let dx = pc[0] - pp[0] - P.U[0] * surf, dy = pc[1] - pp[1] - P.U[1] * surf, dz = pc[2] - pp[2] - P.U[2] * surf;
+      const dn = dx * n[0] + dy * n[1] + dz * n[2];
+      dx -= n[0] * dn; dy -= n[1] * dn; dz -= n[2] * dn;
+      const dt = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (dt > EPS) {
+        const t = _t; t[0] = dx / dt; t[1] = dy / dt; t[2] = dz / dt;
+        const corr = dt < mu.s * d ? dt : Math.min(dt, mu.k * d);
+        const wt = this.genInvMass(pc, t);
+        const lt = corr / wt;
+        this.applyRing(pc, -t[0] * lt, -t[1] * lt, -t[2] * lt);
+      }
+      if (this.contacts.length < 12) this.contacts.push({ p: [p[0], p[1], p[2]], n: [n[0], n[1], n[2]], vnPre, kind, hookAttached, nu });
+      return vnPre;
+    }
+
+    collideRing(h) {
+      const P = this.P, r = this.ring, bd = this.board;
+      const K = this.K, sw = this.sw;
+      for (let k = 0; k < K; k++) this.ringPoint(k, sw[k]);
+      const rad = P.Rc + P.rt;
+      const st = this.state;
+
+      // 板
+      const BB = P.boardBox;
+      {
+        const l = mulMtV(BB.R, [r.c[0] - BB.c[0] - P.U[0] * bd.b, r.c[1] - BB.c[1] - P.U[1] * bd.b, r.c[2] - BB.c[2] - P.U[2] * bd.b], _l2);
+        if (Math.abs(l[0]) < BB.h[0] + rad && Math.abs(l[2]) < BB.h[2] + rad && Math.abs(l[1]) < BB.h[1] + rad) {
+          for (let k = 0; k < K; k++) {
+            const c = sphereBox(sw[k], P.rt, BB, bd.b, P.U);
+            if (c) {
+              const vn = this.resolveRing(sw[k], c.n, c.d, 'board', false, P.mu);
+              this.peak.board = Math.max(this.peak.board, -vn);
+              if (this.play && !this.play.landing && (st === 'descend' || st === 'bottom' || st === 'ascend')) this.recordLanding();
+              for (let j = 0; j < K; j++) this.ringPoint(j, sw[j]);
+            }
+          }
+        }
+      }
+
+      // フック
+      if (!bd.off) {
+        for (const hk of P.hooks) {
+          const lift = bd.b;
+          if (r.c[0] + rad < hk.lo[0] - 0.003 || r.c[0] - rad > hk.hi[0] + 0.003) continue;
+          if (r.c[2] + rad < hk.lo[2] - 0.003 || r.c[2] - rad > hk.hi[2] + 0.003) continue;
+          if (r.c[1] + rad < hk.lo[1] + lift - 0.003 || r.c[1] - rad > hk.hi[1] + lift + 0.003) continue;
+          // 土台と軸受け
+          for (const bx of hk.boxes) {
+            for (let k = 0; k < K; k++) {
+              const c = sphereBox(sw[k], P.rt, bx, lift, P.U);
+              if (c) { this.resolveRing(sw[k], c.n, c.d, 'base', true, P.muHook); for (let j = 0; j < K; j++) this.ringPoint(j, sw[j]); }
+            }
+          }
+          for (const cp of hk.caps) {
+            const a = _a, b = _b;
+            a[0] = cp.a[0] + P.U[0] * lift; a[1] = cp.a[1] + P.U[1] * lift; a[2] = cp.a[2] + P.U[2] * lift;
+            b[0] = cp.b[0] + P.U[0] * lift; b[1] = cp.b[1] + P.U[1] * lift; b[2] = cp.b[2] + P.U[2] * lift;
+            for (let k = 0; k < K; k++) {
+              const s = segSeg(sw[k], sw[(k + 1) % K], a, b);
+              this.ringVsCapsule(s, P.rt + cp.r, 'base', h);
+            }
+          }
+          // 針金
+          const rr = P.rt + hk.rw;
+          for (let k = 0; k < K; k++) {
+            const p1 = sw[k], q1 = sw[(k + 1) % K];
+            for (let m = 0; m < hk.wire.length; m++) {
+              const seg = hk.wire[m];
+              const a = _a, b = _b;
+              a[0] = seg[0][0] + P.U[0] * lift; a[1] = seg[0][1] + P.U[1] * lift; a[2] = seg[0][2] + P.U[2] * lift;
+              b[0] = seg[1][0] + P.U[0] * lift; b[1] = seg[1][1] + P.U[1] * lift; b[2] = seg[1][2] + P.U[2] * lift;
+              const s = segSeg(p1, q1, a, b);
+              const hit = this.ringVsCapsule(s, rr, 'wire', h);
+              if (hit) {
+                for (let j = 0; j < K; j++) this.ringPoint(j, sw[j]);
+                if (this.play) {
+                  this.play.hookTouch = true;
+                  // てっぺん：輪の上側に、上から当たった
+                  if (hk.loop && st === 'descend') {
+                    const yl = s.c2[1] - lift - hk.loop.c[1];
+                    if (yl > hk.loop.Rh * 0.45 && hit.vn < -0.02) this.play.topHit = true;
+                  }
+                  if (!hk.loop && st === 'descend' && hit.vn < -0.02 && m >= 1) this.play.topHit = true;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // 壁
+      const I = WORLD.interior;
+      for (let k = 0; k < K; k += 3) {
+        const p = sw[k];
+        let n = null, d = 0;
+        if (p[0] - P.rt < I.x0) { n = [1, 0, 0]; d = I.x0 - (p[0] - P.rt); }
+        else if (p[0] + P.rt > I.x1) { n = [-1, 0, 0]; d = p[0] + P.rt - I.x1; }
+        else if (p[2] - P.rt < I.z0) { n = [0, 0, 1]; d = I.z0 - (p[2] - P.rt); }
+        else if (p[2] + P.rt > I.z1) { n = [0, 0, -1]; d = p[2] + P.rt - I.z1; }
+        else if (p[1] - P.rt < WORLD.deckY) { n = [0, 1, 0]; d = WORLD.deckY - (p[1] - P.rt); }
+        if (n) { this.resolveRing(p, n, d, 'wall', false, P.mu); for (let j = 0; j < K; j++) this.ringPoint(j, sw[j]); }
+      }
+    }
+
+    ringVsCapsule(s, rr, kind, h) {
+      const dx = s.c1[0] - s.c2[0], dy = s.c1[1] - s.c2[1], dz = s.c1[2] - s.c2[2];
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 >= rr * rr) return null;
+      const d = Math.sqrt(d2);
+      const n = _n2;
+      if (d > EPS) { n[0] = dx / d; n[1] = dy / d; n[2] = dz / d; }
+      else { n[0] = 0; n[1] = 1; n[2] = 0; }
+      const p = _hp; p[0] = s.c1[0]; p[1] = s.c1[1]; p[2] = s.c1[2];
+      const vn = this.resolveRing(p, n, rr - d, kind, true, this.P.muHook);
+      if (kind === 'wire') this.peak.hook = Math.max(this.peak.hook, -vn);
+      _hit.vn = vn; return _hit;
+    }
+
+    collideChain() {
+      const P = this.P, bd = this.board, x = this.x, w = this.w, np = this.np;
+      const BB = P.boardBox, rc = P.chainR;
+      for (let i = 1; i < np; i++) {
+        if (w[i] === 0) continue;
+        const p = x[i];
+        // 板
+        const c = sphereBox(p, rc, BB, bd.b, P.U);
+        if (c) { this.pushParticle(i, c.n, c.d, false, P.mu); }
+        if (bd.off) continue;
+        for (const hk of P.hooks) {
+          const lift = bd.b;
+          if (p[0] < hk.lo[0] - 0.005 || p[0] > hk.hi[0] + 0.005 || p[2] < hk.lo[2] - 0.005 || p[2] > hk.hi[2] + 0.005) continue;
+          if (p[1] < hk.lo[1] + lift - 0.005 || p[1] > hk.hi[1] + lift + 0.005) continue;
+          for (const bx of hk.boxes) { const cb = sphereBox(p, rc, bx, lift, P.U); if (cb) this.pushParticle(i, cb.n, cb.d, true, P.muHook); }
+          const rr = rc + hk.rw;
+          for (const seg of hk.wire) {
+            const a = _a, b = _b;
+            a[0] = seg[0][0] + P.U[0] * lift; a[1] = seg[0][1] + P.U[1] * lift; a[2] = seg[0][2] + P.U[2] * lift;
+            b[0] = seg[1][0] + P.U[0] * lift; b[1] = seg[1][1] + P.U[1] * lift; b[2] = seg[1][2] + P.U[2] * lift;
+            const q = pointSeg(p, a, b);
+            const dx = p[0] - q.c[0], dy = p[1] - q.c[1], dz = p[2] - q.c[2];
+            const d2 = dx * dx + dy * dy + dz * dz;
+            if (d2 < rr * rr) {
+              const d = Math.sqrt(d2), n = _n3;
+              if (d > EPS) { n[0] = dx / d; n[1] = dy / d; n[2] = dz / d; } else { n[0] = 0; n[1] = 1; n[2] = 0; }
+              this.pushParticle(i, n, rr - d, true, P.muHook);
+              this.peak.chain = Math.max(this.peak.chain, 0.05);
+            }
+          }
+        }
+        // 壁
+        const I = WORLD.interior;
+        if (p[0] < I.x0) p[0] = I.x0; if (p[0] > I.x1) p[0] = I.x1;
+        if (p[2] < I.z0) p[2] = I.z0; if (p[2] > I.z1) p[2] = I.z1;
+        if (p[1] < WORLD.deckY) p[1] = WORLD.deckY;
+      }
+    }
+
+    pushParticle(i, n, d, hookAttached, mu) {
+      const P = this.P, bd = this.board, p = this.x[i], pp = this.xp[i], wi = this.w[i];
+      let wb = 0, nu = 0;
+      if (hookAttached) {
+        nu = n[0] * P.U[0] + n[1] * P.U[1] + n[2] * P.U[2];
+        if (Math.abs(nu) > 1e-6 && this.boardFree(-nu)) wb = nu * nu / P.Mb;
+      }
+      const lam = d / (wi + wb);
+      p[0] += n[0] * lam * wi; p[1] += n[1] * lam * wi; p[2] += n[2] * lam * wi;
+      if (wb > 0) bd.b -= lam * nu / P.Mb;
+      // 摩擦
+      const surf = bd.b - bd.bp;
+      let dx = p[0] - pp[0] - P.U[0] * surf, dy = p[1] - pp[1] - P.U[1] * surf, dz = p[2] - pp[2] - P.U[2] * surf;
+      const dn = dx * n[0] + dy * n[1] + dz * n[2];
+      dx -= n[0] * dn; dy -= n[1] * dn; dz -= n[2] * dn;
+      const dt = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (dt > EPS) {
+        const corr = dt < mu.s * d ? 1 : Math.min(1, mu.k * d / dt);
+        p[0] -= dx * corr; p[1] -= dy * corr; p[2] -= dz * corr;
+      }
+    }
+
+    // はね返り：金属どうしは少しはねる
+    restitution(vbs) {
+      const r = this.ring, P = this.P;
+      for (const c of this.contacts) {
+        if (c.vnPre > -0.05) continue;
+        const e = c.kind === 'wire' ? 0.35 : c.kind === 'base' ? 0.25 : 0.12;
+        const rx = c.p[0] - r.c[0], ry = c.p[1] - r.c[1], rz = c.p[2] - r.c[2];
+        const vpx = r.v[0] + r.w[1] * rz - r.w[2] * ry, vpy = r.v[1] + r.w[2] * rx - r.w[0] * rz, vpz = r.v[2] + r.w[0] * ry - r.w[1] * rx;
+        const vn = vpx * c.n[0] + vpy * c.n[1] + vpz * c.n[2] - (c.hookAttached ? this.board.vb * c.nu : 0);
+        const target = -e * c.vnPre;
+        const dv = target - vn;
+        if (dv <= 0) continue;
+        const wr = this.genInvMass(c.p, c.n);
+        const j = dv / wr;
+        r.v[0] += c.n[0] * j / P.M; r.v[1] += c.n[1] * j / P.M; r.v[2] += c.n[2] * j / P.M;
+        const cx = ry * c.n[2] - rz * c.n[1], cy = rz * c.n[0] - rx * c.n[2], cz = rx * c.n[1] - ry * c.n[0];
+        const t = this.invInertiaW(cx * j, cy * j, cz * j, _gi);
+        r.w[0] += t[0]; r.w[1] += t[1]; r.w[2] += t[2];
+        c.vnPre = 0;
+      }
+    }
+
+    // 着地：フックから見てどちらに落ちたか
+    recordLanding() {
+      const P = this.P, r = this.ring;
+      let best = null, bd = 1e9;
+      for (const hk of P.hooks) {
+        const dx = r.c[0] - hk.origin[0], dz = r.c[2] - hk.origin[2];
+        const d = dx * dx + dz * dz; if (d < bd) { bd = d; best = hk; }
+      }
+      const rel = mulMtV(best.R, [r.c[0] - best.origin[0], r.c[1] - best.origin[1], r.c[2] - best.origin[2]], [0, 0, 0]);
+      this.play.landing = { open: -rel[0], side: rel[2], t: this.time };
+    }
+
+    // 画面の描画用
+    snapshot() {
+      return {
+        head: [this.head[0] + this.drift[0], this.head[1], this.head[2] + this.drift[1]],
+        chain: this.x.map((p) => p.slice()),
+        ring: { c: this.ring.c.slice(), q: this.ring.q.slice() },
+        board: this.board.b, state: this.state, credits: this.credits,
+      };
+    }
+  }
+
+  const _gi = [0, 0, 0], _cp = [0, 0, 0], _n = [0, 0, 0], _n2 = [0, 0, 0], _n3 = [0, 0, 0], _t = [0, 0, 0];
+  const _rl = [0, 0, 0], _pc = [0, 0, 0], _pp = [0, 0, 0], _l2 = [0, 0, 0], _a = [0, 0, 0], _b = [0, 0, 0], _hp = [0, 0, 0];
+  const _hit = { vn: 0 };
+
+  const api = { HookMachine, WORLD, OPTIONS, DEFAULT_SETUP, hookLocal, H };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else global.HookPhysics = api;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const { HookMachine, WORLD, OPTIONS, DEFAULT_SETUP } = window.HookPhysics;
+const $ = (id) => document.getElementById(id);
+
+// ------------------------------------------------------------------ 保存
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('hookdai:' + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('hookdai:' + k, JSON.stringify(v)); } catch (e) { /* 保存できない環境 */ } },
+};
+const hot = window.claude?.hot;
+const saved = {
+  setup: store.get('setup', null), preset: store.get('preset', 'basic'), log: store.get('log', []), spent: store.get('spent', 0), gets: store.get('gets', 0), budget: store.get('budget', 1000), secret: store.get('secret', false),
+};
+
+// ------------------------------------------------------------------ 台の選択肢
+const PRESETS = [
+  { id: 'basic', name: '横向きフック', tag: '練習台', note: '開いた側が左。まずはここから', setup: {} },
+  { id: 'back', name: '奥向きフック', tag: '縦ゆれ', note: '手前に来たときに奥へ押す', setup: { hookDir: 'back' } },
+  { id: 'front', name: '手前向きフック', tag: 'むずかしい', note: 'まっすぐは入りにくい。ななめから', setup: { hookDir: 'front' } },
+  { id: 'L', name: 'L字フック', tag: '横から', note: '真上やすべらせが使えない', setup: { hookType: 'L' } },
+  { id: 'triple', name: 'フック3本', tag: 'いちばん奥', note: 'まず1本にしぼる', setup: { hookType: 'triple', hookZ: 0 } },
+  { id: 'bigring', name: '大きいリング', tag: 'すべる板', note: 'すべりと回転を使う', setup: { ringSize: 'big', slippery: true } },
+  { id: 'edge', name: '下降ぎりぎり', tag: '見つけたらラッキー', note: '板にぎりぎりつかない深さ', setup: { descent: 'edge' } },
+  { id: 'button', name: '自分で下ろせる台', tag: '周期の練習', note: '③で下ろす。もう一度で止まる', setup: { descentButton: true } },
+  { id: 'tilt', name: '傾いた板', tag: 'すべる先を読む', note: '左が低く、よくすべる', setup: { tilt: 'left', slippery: true } },
+  { id: 'swingroot', name: '根元がゆれる台', tag: '読みにくい', note: '撤退の判断の練習にも', setup: { rootSwing: true, drive: 'wavy' } },
+  { id: 'random', name: 'おまかせ', tag: '設定はひみつ', note: '入れる前に7つを見る', random: true },
+];
+const FIELDS = [
+  { group: '① 景品', key: 'prizePrice', label: '買うといくら', options: [[800, '800円'], [1500, '1,500円'], [3000, '3,000円']] },
+  { group: '② リング', key: 'ringSize', label: '大きさ', options: [['small', '小 40mm'], ['mid', '中 48mm'], ['big', '大 60mm']] },
+  { key: 'ringThick', label: '厚み', options: [['thin', '細い'], ['mid', 'ふつう'], ['thick', '太い']] },
+  { key: 'ringWeight', label: '重さ', options: [['light', '軽い'], ['mid', 'ふつう'], ['heavy', '重い']] },
+  { group: '③ チェーン', key: 'chainLen', label: '長さ', options: [[0.15, '15cm'], [0.22, '22cm'], [0.30, '30cm']] },
+  { key: 'rootSwing', label: '根元', options: [[false, '動かない'], [true, 'ゆれる']] },
+  { group: '④ フック', key: 'hookType', label: '形', options: [['q', 'はてな'], ['L', 'L字'], ['triple', '3本']] },
+  { key: 'hookDir', label: '開いた側', options: [['left', '左'], ['right', '右'], ['back', '奥'], ['front', '手前']] },
+  { key: 'hookYaw', label: '角度', range: [-20, 20, 5], unit: '°', scale: 1 },
+  { group: '⑤ 板', key: 'tilt', label: '傾き', options: [['none', 'なし'], ['front', '手前が低い'], ['back', '奥が低い'], ['left', '左が低い'], ['right', '右が低い']] },
+  { key: 'slippery', label: 'すべり', options: [[false, 'ふつう'], [true, 'よくすべる']] },
+  { key: 'hookX', label: 'フックの左右', range: [-0.08, 0.12, 0.01], unit: 'cm', scale: 100 },
+  { key: 'hookZ', label: 'フックの前後', range: [-0.08, 0.06, 0.01], unit: 'cm', scale: 100 },
+  { group: '⑥ どこまで下りるか', key: 'descent', label: '深さ', options: [['edge', 'ぎりぎり'], ['normal', 'ふつう'], ['deep', '深い']] },
+  { key: 'descentButton', label: '下降ボタン', options: [[false, 'なし（自動）'], [true, 'あり（自分で）']] },
+  { group: '⑦ 機械のくせ', key: 'drive', label: '動き方', options: [['brisk', 'きびきび'], ['smooth', 'なめらか'], ['wavy', '波打つ']] },
+  { key: 'speed', label: '速さ', options: [[0.09, 'ゆっくり'], [0.12, 'ふつう'], [0.15, 'はやい']] },
+  { key: 'drift', label: '下りと上りのずれ', options: [[false, 'なし'], [true, 'あり']] },
+];
+const RESULT = {
+  get: ['取れた!!', 'r-get'], lift: ['掛かったけど外れた', 'r-lift'], top: ['てっぺんに当たった', 'r-top'],
+  touch: ['当たったけど入らず', 'r-touch'], miss: ['フックに届かず', 'r-miss'],
+};
+const CIRCLED = ['', '①', '②', '③', '④', '⑤'];
+const CLOCK_NAMES = {
+  x: ['', '右はし', '右からもどる', 'まん中', '左はし', '左からもどる'],
+  z: ['', '手前はし', '手前からもどる', 'まん中', '奥はし', '奥からもどる'],
+};
+
+let presetId = saved.preset || 'basic';
+let secret = !!saved.secret;
+let setup = Object.assign({}, DEFAULT_SETUP, saved.setup || {});
+const machine = new HookMachine(setup);
+machine.spent = saved.spent || 0; machine.gets = saved.gets || 0; machine.log = saved.log || [];
+machine.playNo = machine.log.length ? machine.log[0].no : 0;
+let budget = saved.budget || 1000;
+
+function persist() {
+  store.set('setup', setup); store.set('preset', presetId); store.set('log', machine.log.slice(0, 60));
+  store.set('spent', machine.spent); store.set('gets', machine.gets); store.set('budget', budget); store.set('secret', secret);
+}
+hot?.snapshot?.(() => ({ setup, preset: presetId, log: machine.log.slice(0, 60), spent: machine.spent, gets: machine.gets, budget, secret }));
+
+function randomSetup() {
+  const pick = (a) => a[Math.floor(Math.random() * a.length)];
+  const s = {};
+  for (const f of FIELDS) {
+    if (f.options) s[f.key] = pick(f.options)[0];
+    else { const [a, b, st] = f.range; s[f.key] = +(a + st * Math.floor(Math.random() * ((b - a) / st + 1))).toFixed(3); }
+  }
+  // おまかせでも遊べる範囲にする
+  s.prizePrice = pick([800, 1500, 3000]);
+  if (Math.random() < 0.7) s.descentButton = false;
+  if (Math.random() < 0.6) s.rootSwing = false;
+  if (s.hookType === 'triple') s.hookZ = 0;
+  return s;
+}
+
+// ------------------------------------------------------------------ 3D
+const canvas = $('view');
+const isPhone = window.matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 700;
+canvas.addEventListener('webglcontextlost', (e) => e.preventDefault());
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#130f18');
+scene.fog = new THREE.Fog('#130f18', 2.6, 7.5);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.03).texture;
+
+const camera = new THREE.PerspectiveCamera(36, 1, 0.02, 30);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true; controls.dampingFactor = 0.08; controls.enablePan = false;
+controls.minDistance = 0.28; controls.maxDistance = 2.6; controls.maxPolarAngle = Math.PI * 0.62;
+controls.rotateSpeed = 0.6; controls.zoomSpeed = 0.7;
+
+function canvasTex(w, h, draw, repeat) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); }
+  return t;
+}
+
+const MAT = {
+  chrome: new THREE.MeshStandardMaterial({ color: 0xf4f6fa, metalness: 1, roughness: 0.12, envMapIntensity: 1.8 }),
+  chain: new THREE.MeshStandardMaterial({ color: 0xe2e5ea, metalness: 1, roughness: 0.2, envMapIntensity: 1.7 }),
+  wire: new THREE.MeshStandardMaterial({ color: 0x24262d, metalness: 0.55, roughness: 0.34 }),
+  baseY: new THREE.MeshPhysicalMaterial({ color: 0xffd84a, roughness: 0.32, clearcoat: 0.6, clearcoatRoughness: 0.2 }),
+  collar: new THREE.MeshStandardMaterial({ color: 0x8e949e, metalness: 0.75, roughness: 0.32 }),
+  board: new THREE.MeshPhysicalMaterial({ color: 0xc4b3f1, roughness: 0.42, clearcoat: 0.35 }),
+  boardEdge: new THREE.MeshPhysicalMaterial({ color: 0xb3a1e6, roughness: 0.5 }),
+  rail: new THREE.MeshStandardMaterial({ color: 0xa9aeb7, metalness: 0.9, roughness: 0.3 }),
+  deck: new THREE.MeshStandardMaterial({ color: 0xeeeaf1, roughness: 0.62 }),
+  mint: new THREE.MeshPhysicalMaterial({ color: 0x95e2cc, roughness: 0.28, clearcoat: 0.9, clearcoatRoughness: 0.15 }),
+  glass: new THREE.MeshPhysicalMaterial({ color: 0xffffff, transparent: true, opacity: 0.07, roughness: 0.04, metalness: 0, clearcoat: 1, depthWrite: false, side: THREE.DoubleSide }),
+  acrylic: new THREE.MeshPhysicalMaterial({ color: 0xe8f4ff, transparent: true, opacity: 0.18, roughness: 0.08, clearcoat: 1, depthWrite: false, side: THREE.DoubleSide }),
+  alu: new THREE.MeshStandardMaterial({ color: 0xc8cbd2, metalness: 0.92, roughness: 0.26 }),
+  shell: new THREE.MeshPhysicalMaterial({ color: 0xf7f4f9, roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.12 }),
+  shellMint: new THREE.MeshPhysicalMaterial({ color: 0x8fdcc6, roughness: 0.25, clearcoat: 1 }),
+  dark: new THREE.MeshStandardMaterial({ color: 0x0b090e, roughness: 0.92 }),
+  net: new THREE.MeshStandardMaterial({ color: 0xf7f7f7, metalness: 0.35, roughness: 0.35 }),
+  cable: new THREE.MeshStandardMaterial({ color: 0x2a2a2e, roughness: 0.6 }),
+};
+
+// 店の床：ゲームセンターによくある、暗い地に色の粒が散ったカーペット
+const carpet = canvasTex(512, 512, (g, w, h) => {
+  g.fillStyle = '#1a1530'; g.fillRect(0, 0, w, h);
+  const cols = ['#ff7aa8', '#5fd3c0', '#ffd65a', '#8f7cf0', '#3c8cf0'];
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 260; i++) {
+    g.fillStyle = cols[i % cols.length]; g.globalAlpha = 0.55 + rnd() * 0.3;
+    const x = rnd() * w, y = rnd() * h, s = 4 + rnd() * 9;
+    g.save(); g.translate(x, y); g.rotate(rnd() * 6.28);
+    const k = i % 4;
+    if (k === 0) { g.beginPath(); g.arc(0, 0, s * 0.6, 0, 7); g.fill(); }
+    else if (k === 1) { g.beginPath(); g.moveTo(0, -s); g.lineTo(s, s); g.lineTo(-s, s); g.closePath(); g.fill(); }
+    else if (k === 2) { g.lineWidth = 3; g.strokeStyle = g.fillStyle; g.beginPath(); g.moveTo(-s, 0); g.quadraticCurveTo(0, -s, s, 0); g.stroke(); }
+    else { g.fillRect(-s * 0.4, -s, s * 0.8, s * 2); }
+    g.restore();
+  }
+}, [10, 10]);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(14, 14), new THREE.MeshStandardMaterial({ map: carpet, roughness: 0.95 }));
+floor.rotation.x = -Math.PI / 2; floor.position.y = -0.86; floor.receiveShadow = true; scene.add(floor);
+
+// 奥の壁の絵：本の色（ピンク・ミント・レモン・ラベンダー）の斜めストライプ。文字は入れない
+const backTex = canvasTex(1024, 512, (g, w, h) => {
+  const cols = ['#f7a9c2', '#f3e9f7', '#8fd9c4', '#f3e9f7', '#f5d66f', '#f3e9f7', '#b9a6f0', '#f3e9f7'];
+  g.fillStyle = '#f3e9f7'; g.fillRect(0, 0, w, h);
+  g.save(); g.translate(w / 2, h / 2); g.rotate(-0.5);
+  for (let i = -30; i < 30; i++) { g.fillStyle = cols[(i + 30) % cols.length]; g.fillRect(i * 44, -900, 44, 1800); }
+  g.restore();
+  g.fillStyle = '#ffffffcc';
+  for (let i = 0; i < 26; i++) {
+    const x = (i * 197) % w, y = (i * 113) % h, r = 6 + (i % 3) * 4;
+    g.beginPath();
+    for (let k = 0; k < 10; k++) { const a = k * Math.PI / 5, rr = k % 2 ? r * 0.45 : r; g.lineTo(x + rr * Math.cos(a), y + rr * Math.sin(a)); }
+    g.fill();
+  }
+});
+
+// LED の看板：ドットで「フック台」
+function makeSign() {
+  return canvasTex(1024, 192, (g, w, h) => {
+    g.fillStyle = '#0d0a10'; g.fillRect(0, 0, w, h);
+    const src = document.createElement('canvas'); src.width = 128; src.height = 24;
+    const s = src.getContext('2d'); s.fillStyle = '#fff'; s.font = '20px "DotGothic16", monospace'; s.textBaseline = 'middle'; s.textAlign = 'center';
+    s.fillText('フック台', 64, 13);
+    const d = s.getImageData(0, 0, 128, 24).data;
+    for (let y = 0; y < 24; y++) for (let x = 0; x < 128; x++) {
+      const on = d[(y * 128 + x) * 4 + 3] > 90;
+      g.fillStyle = on ? '#ffe06a' : '#2a1f14';
+      g.beginPath(); g.arc(x * 8 + 4, y * 8 + 4, on ? 3.4 : 2.2, 0, 7); g.fill();
+    }
+  });
+}
+
+const B = WORLD.board, I = WORLD.interior;
+const cab = new THREE.Group(); scene.add(cab);
+const box = (w, h, d, mat, x, y, z, cast = true, recv = true) => {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); m.castShadow = cast; m.receiveShadow = recv; cab.add(m); return m;
+};
+// 下の箱（景品を入れておく台）
+box(0.84, 0.86, 0.72, MAT.shell, 0, -0.43 + 0.0, 0);
+box(0.845, 0.06, 0.725, MAT.shellMint, 0, -0.06, 0);           // 帯
+// 床の高さまでの縁（中は落とし口があくので枠だけ）
+box(0.86, 0.06, 0.03, MAT.shell, 0, 0.03, 0.355);
+box(0.86, 0.06, 0.03, MAT.shell, 0, 0.03, -0.355);
+box(0.03, 0.06, 0.74, MAT.shell, -0.415, 0.03, 0);
+box(0.03, 0.06, 0.74, MAT.shell, 0.415, 0.03, 0);
+box(0.06, 0.06, 0.68, MAT.shell, -0.385 + 0.0, 0.03, 0);
+box(0.06, 0.06, 0.68, MAT.shell, 0.385, 0.03, 0);
+// 取り出し口（左下の前）
+box(0.2, 0.17, 0.02, MAT.dark, -0.24, -0.5, 0.362, false, false);
+const flap = new THREE.Mesh(new THREE.PlaneGeometry(0.19, 0.16), MAT.acrylic); flap.position.set(-0.24, -0.5, 0.374); cab.add(flap);
+const trayGlow = new THREE.PointLight(0xffe06a, 0, 0.5); trayGlow.position.set(-0.24, -0.5, 0.34); cab.add(trayGlow);
+const trayPrize = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.07, 0.06), new THREE.MeshStandardMaterial({ color: 0xffb1c8, roughness: 0.6 }));
+trayPrize.position.set(-0.24, -0.55, 0.33); trayPrize.visible = false; cab.add(trayPrize);
+// 操作盤（ボタンは画面下の操作盤と同じ色）
+const panel = box(0.84, 0.05, 0.16, MAT.shell, 0, -0.12, 0.42);
+panel.rotation.x = 0.35;
+const btnMesh = (color, x) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.032, 0.02, 32), new THREE.MeshPhysicalMaterial({ color, roughness: 0.25, clearcoat: 1, emissive: color, emissiveIntensity: 0.0 })); m.position.set(x, -0.085, 0.43); m.rotation.x = 0.35; cab.add(m); return m; };
+const btn3D = [null, btnMesh(0xffe06a, 0.06), btnMesh(0x95e2cc, 0.16), btnMesh(0xffb1c8, 0.26)];
+// 床（落とし口の左を空ける）
+const deckW = I.x1 - WORLD.chute.x1;
+const deck = box(deckW, 0.02, I.z1 - I.z0, MAT.deck, (I.x1 + WORLD.chute.x1) / 2, WORLD.deckY - 0.01, 0, false, true);
+box(0.012, 0.05, I.z1 - I.z0, MAT.deck, WORLD.chute.x1 + 0.006, WORLD.deckY + 0.015, 0, false, true);  // 落とし口のふち
+const gutter = new THREE.Mesh(new THREE.BoxGeometry(WORLD.chute.x1 - I.x0, 0.01, I.z1 - I.z0), MAT.dark);
+gutter.position.set((WORLD.chute.x1 + I.x0) / 2, -0.12, 0); cab.add(gutter);
+const guard = new THREE.Mesh(new THREE.PlaneGeometry(WORLD.chute.x1 - I.x0, 0.16), MAT.acrylic);
+guard.position.set((WORLD.chute.x1 + I.x0) / 2, WORLD.deckY + 0.08, I.z1 - 0.01); cab.add(guard);
+// 奥の壁と天井
+const back = new THREE.Mesh(new THREE.PlaneGeometry(I.x1 - I.x0 + 0.02, 0.94), new THREE.MeshStandardMaterial({ map: backTex, roughness: 0.8 }));
+back.position.set(0, WORLD.deckY + 0.47, I.z0 - 0.002); back.receiveShadow = true; cab.add(back);
+const ceil = box(0.86, 0.025, 0.74, MAT.shell, 0, 1.0, 0, false, false);
+// 柱とガラス
+for (const [x, z] of [[-0.42, 0.36], [0.42, 0.36], [-0.42, -0.36], [0.42, -0.36]]) box(0.03, 0.96, 0.03, MAT.alu, x, 0.52, z);
+const glassF = new THREE.Mesh(new THREE.PlaneGeometry(0.81, 0.94), MAT.glass); glassF.position.set(0, 0.53, 0.36); glassF.renderOrder = 10; cab.add(glassF);
+for (const sx of [-1, 1]) { const g = new THREE.Mesh(new THREE.PlaneGeometry(0.69, 0.94), MAT.glass); g.position.set(sx * 0.42, 0.53, 0); g.rotation.y = Math.PI / 2; g.renderOrder = 10; cab.add(g); }
+// 看板
+const sign = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.17, 0.72), [MAT.shell, MAT.shell, MAT.shell, MAT.shell, new THREE.MeshBasicMaterial({ color: 0xffffff }), MAT.shell]);
+sign.position.set(0, 1.1, 0); cab.add(sign);
+const signFace = new THREE.Mesh(new THREE.PlaneGeometry(0.78, 0.13), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+signFace.position.set(0, 1.1, 0.362); cab.add(signFace);
+document.fonts?.load('20px "DotGothic16"').finally(() => { signFace.material.map = makeSign(); signFace.material.needsUpdate = true; });
+const strip = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.012, 0.02), new THREE.MeshBasicMaterial({ color: 0xfff6e6 }));
+strip.position.set(0, 0.975, 0.33); cab.add(strip);
+
+// まわりの台（ぼんやり見えるだけ）
+for (const [x, col] of [[-1.05, 0xff8fb5], [1.05, 0x7ad8ff], [-2.1, 0xffd65a], [2.1, 0x9f8cff]]) {
+  const g = new THREE.Group(); g.position.set(x, 0, -0.1);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.84, 1.96, 0.72), new THREE.MeshStandardMaterial({ color: 0x241d2c, roughness: 0.5 }));
+  body.position.y = 0.12; g.add(body);
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.76, 0.12), new THREE.MeshBasicMaterial({ color: col }));
+  glow.position.set(0, 1.0, 0.365); g.add(glow);
+  const inner = new THREE.Mesh(new THREE.PlaneGeometry(0.74, 0.8), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.12 }));
+  inner.position.set(0, 0.5, 0.362); g.add(inner);
+  scene.add(g);
+}
+
+// 光
+scene.add(new THREE.HemisphereLight(0x9d93b8, 0x1a1420, 0.35));
+const spot = new THREE.SpotLight(0xfff4e8, 4.2, 2.2, 1.05, 0.65, 1.2);
+spot.position.set(0.02, 0.97, 0.12); spot.target.position.set(0.02, 0.2, -0.05);
+spot.castShadow = true; spot.shadow.mapSize.set(isPhone ? 1024 : 2048, isPhone ? 1024 : 2048); spot.shadow.bias = -0.0004; spot.shadow.normalBias = 0.01; spot.shadow.camera.near = 0.05; spot.shadow.camera.far = 1.5;
+scene.add(spot, spot.target);
+const fill = new THREE.PointLight(0xfff0f6, 0.5, 1.6, 1.4); fill.position.set(-0.2, 0.75, 0.3); scene.add(fill);
+for (const [x, col] of [[-1.3, 0xff5f9a], [1.3, 0x4fb8ff]]) { const p = new THREE.PointLight(col, 3, 4, 1.6); p.position.set(x, 1.2, 0.8); scene.add(p); }
+
+// 網台（白い網の台）。上の網は景品が落ちるときに傾く
+const S = WORLD.stand;
+const standG = new THREE.Group(); scene.add(standG);
+for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+  const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, S.top - WORLD.deckY, 10), MAT.net);
+  leg.position.set(S.cx + x * (S.hx - 0.01), (S.top + WORLD.deckY) / 2, S.cz + z * (S.hz - 0.01)); leg.castShadow = true; standG.add(leg);
+}
+const netTop = new THREE.Group(); netTop.position.set(S.cx + S.hx, S.top, S.cz); standG.add(netTop);   // ちょうつがいは右の縁
+{
+  const rod = (len, r) => new THREE.CylinderGeometry(r, r, len, 6);
+  const gx = rod(2 * S.hz, 0.0018), gz = rod(2 * S.hx, 0.0018);
+  const nx = Math.round(2 * S.hx / 0.02) + 1, nz = Math.round(2 * S.hz / 0.02) + 1;
+  const im = new THREE.InstancedMesh(gx, MAT.net, nx); const im2 = new THREE.InstancedMesh(gz, MAT.net, nz);
+  const o = new THREE.Object3D();
+  for (let i = 0; i < nx; i++) { o.position.set(-2 * S.hx + i * 0.02, 0, 0); o.rotation.set(Math.PI / 2, 0, 0); o.updateMatrix(); im.setMatrixAt(i, o.matrix); }
+  for (let i = 0; i < nz; i++) { o.position.set(-S.hx, -0.002, -S.hz + i * 0.02); o.rotation.set(0, 0, Math.PI / 2); o.updateMatrix(); im2.setMatrixAt(i, o.matrix); }
+  im.castShadow = im2.castShadow = true; netTop.add(im, im2);
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(2 * S.hx + 0.01, 0.008, 2 * S.hz + 0.01), MAT.net);
+  frame.position.set(-S.hx, -0.006, 0); frame.material = MAT.net;
+  const hole = new THREE.Mesh(new THREE.BoxGeometry(2 * S.hx - 0.01, 0.01, 2 * S.hz - 0.01), MAT.dark); hole.position.copy(frame.position); hole.visible = false;
+  // 外枠だけ残す
+  const edges = [[2 * S.hx + 0.012, 0.008, 0.008, -S.hx, -0.004, -S.hz], [2 * S.hx + 0.012, 0.008, 0.008, -S.hx, -0.004, S.hz], [0.008, 0.008, 2 * S.hz, -2 * S.hx, -0.004, 0], [0.008, 0.008, 2 * S.hz, 0, -0.004, 0]];
+  for (const [w, h, d, x, y, z] of edges) { const e = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), MAT.net); e.position.set(x, y, z); e.castShadow = true; netTop.add(e); }
+}
+
+// 景品の箱（無地。柄だけ）
+const prizeTex = canvasTex(256, 256, (g, w, h) => {
+  g.fillStyle = '#ffc3d4'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#ffffff';
+  for (let y = 0; y < h; y += 32) for (let x = (y / 32) % 2 ? 16 : 0; x < w; x += 32) { g.beginPath(); g.arc(x + 8, y + 8, 5, 0, 7); g.fill(); }
+  g.fillStyle = '#ffe06a'; g.fillRect(0, h * 0.42, w, h * 0.16);
+});
+const P0 = WORLD.prize;
+const prize = new THREE.Mesh(new THREE.BoxGeometry(P0.w, P0.h, P0.d), new THREE.MeshPhysicalMaterial({ map: prizeTex, roughness: 0.55, clearcoat: 0.25 }));
+prize.castShadow = true; prize.receiveShadow = true; scene.add(prize);
+const prizeHome = new THREE.Vector3(S.cx, S.top + P0.h / 2 + 0.004, S.cz);
+prize.position.copy(prizeHome);
+
+// 鎖の輪（共通の形）
+function linkGeometry(pitch, wireR) {
+  const R = 0.0028; const g = new THREE.TorusGeometry(R, wireR, 6, 18);
+  g.scale(1, Math.max(1.2, pitch / 2 / R), 1);
+  return g;
+}
+
+// 本体（ミントの帽子）・ガントリー
+const gantry = new THREE.Group(); scene.add(gantry);
+for (const z of [I.z0 + 0.02, I.z1 - 0.02]) { const r = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.012, 0.016), MAT.alu); r.position.set(0, 0.985, z); gantry.add(r); }
+const beam = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.02, I.z1 - I.z0 - 0.02), MAT.alu); beam.position.y = 0.972; beam.castShadow = true; gantry.add(beam);
+const carriage = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.03, 0.05), MAT.alu); carriage.position.y = 0.955; carriage.castShadow = true; gantry.add(carriage);
+const headG = new THREE.Group(); scene.add(headG);
+{
+  const prof = [];
+  for (let i = 0; i <= 16; i++) { const t = i / 16; prof.push(new THREE.Vector2(0.044 * Math.sin(t * Math.PI / 2) + 0.004, 0.05 * (1 - t) ** 1.6)); }
+  prof.reverse();
+  const cap = new THREE.Mesh(new THREE.LatheGeometry(prof, 40), MAT.mint);
+  cap.position.y = 0.004; cap.castShadow = true; headG.add(cap);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.046, 0.004, 10, 40), MAT.shell); rim.rotation.x = Math.PI / 2; rim.position.y = 0.005; headG.add(rim);
+  const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.046, 0.046, 0.004, 40), MAT.collar); plate.position.y = 0.003; headG.add(plate);
+  const eye = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.01, 16), MAT.chrome); eye.position.y = -0.003; headG.add(eye);
+}
+const cables = [-1, 1].map(() => { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.0012, 0.0012, 1, 6), MAT.cable); scene.add(c); return c; });
+
+// 動く部品（台を替えると作り直す）
+let dyn = null;
+const linkM = new THREE.Object3D();
+const yAxis = new THREE.Vector3(0, 1, 0);
+function buildDynamic() {
+  if (dyn) { scene.remove(dyn.root); dyn.root.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); }
+  const P = machine.P;
+  const root = new THREE.Group(); scene.add(root);
+  // 板
+  const lift = new THREE.Group(); root.add(lift);
+  const bb = P.boardBox;
+  const bm = new THREE.Matrix4().set(bb.R[0], bb.R[1], bb.R[2], bb.c[0], bb.R[3], bb.R[4], bb.R[5], bb.c[1], bb.R[6], bb.R[7], bb.R[8], bb.c[2], 0, 0, 0, 1);
+  const boardMesh = new THREE.Mesh(new THREE.BoxGeometry(2 * bb.h[0], 2 * bb.h[1], 2 * bb.h[2]), [MAT.boardEdge, MAT.boardEdge, MAT.board, MAT.boardEdge, MAT.boardEdge, MAT.boardEdge]);
+  boardMesh.matrixAutoUpdate = false; boardMesh.matrix.copy(bm); boardMesh.castShadow = true; boardMesh.receiveShadow = true; lift.add(boardMesh);
+  // レール（板の下）と支え
+  for (const z of [B.cz - B.hz + 0.025, B.cz + B.hz - 0.025]) {
+    const r = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 2 * B.hx + 0.04, 12), MAT.rail);
+    r.rotation.z = Math.PI / 2; r.position.set(B.cx, B.top - B.thick - 0.004, z); r.castShadow = true; root.add(r);
+    for (const x of [B.cx - B.hx - 0.01, B.cx + B.hx + 0.01]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, B.top - B.thick - WORLD.deckY, 10), MAT.rail);
+      post.position.set(x, (B.top - B.thick + WORLD.deckY) / 2, z); post.castShadow = true; root.add(post);
+    }
+  }
+  // フック
+  for (const hk of P.hooks) {
+    const pts = [new THREE.Vector3(...hk.wire[0][0])];
+    for (const [, b] of hk.wire) pts.push(new THREE.Vector3(...b));
+    const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal', 0.2);
+    const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 120, hk.rw, 10, false), MAT.wire);
+    tube.castShadow = true; lift.add(tube);
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(hk.rw, 10, 8), MAT.wire); tip.position.copy(pts[pts.length - 1]); lift.add(tip);
+    const R = hk.R;
+    const hm = new THREE.Matrix4().set(R[0], R[1], R[2], hk.origin[0], R[3], R[4], R[5], hk.origin[1], R[6], R[7], R[8], hk.origin[2], 0, 0, 0, 1);
+    // 黄色い台形の土台
+    const shape = new THREE.Shape(); shape.moveTo(-0.018, 0); shape.lineTo(0.018, 0); shape.lineTo(0.011, 0.015); shape.lineTo(-0.011, 0.015); shape.closePath();
+    const bg = new THREE.ExtrudeGeometry(shape, { depth: 0.024, bevelEnabled: true, bevelSize: 0.0012, bevelThickness: 0.0012, bevelSegments: 2 });
+    bg.translate(0, 0, -0.012);
+    const base = new THREE.Mesh(bg, MAT.baseY); base.matrixAutoUpdate = false; base.matrix.copy(hm); base.castShadow = true; base.receiveShadow = true; lift.add(base);
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.0055, 0.0062, 0.007, 20), MAT.collar);
+    const cm = hm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.0185, 0)); col.matrixAutoUpdate = false; col.matrix.copy(cm); col.castShadow = true; lift.add(col);
+    const screw = new THREE.Mesh(new THREE.CylinderGeometry(0.0025, 0.0025, 0.002, 12), MAT.collar);
+    const sm = hm.clone().multiply(new THREE.Matrix4().makeTranslation(0.013, 0.0005, 0)); screw.matrixAutoUpdate = false; screw.matrix.copy(sm); lift.add(screw);
+  }
+  // リング
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(P.Rc, P.rt, 18, 64), MAT.chrome);
+  ring.castShadow = true; root.add(ring);
+  // 鎖
+  const chain = new THREE.InstancedMesh(linkGeometry(P.linkLen, 0.0009), MAT.chain, machine.np - 1 + 1);
+  chain.castShadow = true; chain.frustumCulled = false; root.add(chain);
+  // 板の鎖（板の下から景品の上まで）
+  const bchainN = 12;
+  const bchain = new THREE.InstancedMesh(linkGeometry(0.0125, 0.0008), MAT.chain, bchainN);
+  bchain.castShadow = true; bchain.frustumCulled = false; root.add(bchain);
+  // 軌跡
+  const trailN = 240;
+  const trailGeo = new THREE.BufferGeometry(); trailGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(trailN * 3), 3));
+  const trail = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({ color: 0xffe06a, transparent: true, opacity: 0.85 }));
+  trail.frustumCulled = false; trail.visible = ui.trail; root.add(trail);
+  dyn = { root, lift, ring, chain, bchain, bchainN, trail, trailN, trailPts: [] };
+  syncDynamic(0);
+}
+
+const tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3(), tmpQ = new THREE.Quaternion(), rollQ = new THREE.Quaternion();
+function placeLink(im, i, a, b, odd) {
+  tmpV.set(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+  const l = tmpV.length() || 1e-6; tmpV.multiplyScalar(1 / l);
+  linkM.position.set((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
+  tmpQ.setFromUnitVectors(yAxis, tmpV);
+  if (odd) { rollQ.setFromAxisAngle(yAxis, Math.PI / 2); tmpQ.multiply(rollQ); }
+  linkM.quaternion.copy(tmpQ); linkM.scale.set(1, 1, 1);
+  linkM.updateMatrix(); im.setMatrixAt(i, linkM.matrix);
+}
+
+let prizeAnim = null;
+function syncDynamic(dt) {
+  const P = machine.P, x = machine.x;
+  const head = [machine.head[0] + machine.drift[0], machine.head[1], machine.head[2] + machine.drift[1]];
+  headG.position.set(head[0], head[1], head[2]);
+  beam.position.x = head[0]; carriage.position.set(head[0], 0.955, head[2]);
+  for (let k = 0; k < 2; k++) {
+    const c = cables[k], top = 0.94, bot = head[1] + 0.05;
+    const len = Math.max(0.002, top - bot);
+    c.scale.set(1, len, 1); c.position.set(head[0] + (k ? 0.012 : -0.012), (top + bot) / 2, head[2]);
+  }
+  // 板
+  const b = machine.board.b;
+  dyn.lift.position.set(P.U[0] * b, P.U[1] * b, P.U[2] * b);
+  // 鎖：根元から最後の輪まで
+  const np = machine.np;
+  for (let i = 0; i < np - 1; i++) placeLink(dyn.chain, i, x[i], x[i + 1], i % 2);
+  // 最後の輪はリングの線をくわえる向き
+  {
+    const e = x[np - 1], c = machine.ring.c;
+    const dir = [e[0] - c[0], e[1] - c[1], e[2] - c[2]]; const l = Math.hypot(...dir) || 1;
+    const a = [e[0] + dir[0] / l * 0.004, e[1] + dir[1] / l * 0.004, e[2] + dir[2] / l * 0.004];
+    const bb2 = [e[0] - dir[0] / l * 0.004, e[1] - dir[1] / l * 0.004, e[2] - dir[2] / l * 0.004];
+    placeLink(dyn.chain, np - 1, a, bb2, (np - 1) % 2);
+  }
+  dyn.chain.instanceMatrix.needsUpdate = true;
+  // リング
+  const r = machine.ring;
+  dyn.ring.position.set(r.c[0], r.c[1], r.c[2]); dyn.ring.quaternion.set(r.q[0], r.q[1], r.q[2], r.q[3]);
+  // 景品
+  updatePrize(dt);
+  // 板の鎖：板の下から、景品の上の留め具まで
+  {
+    const top = [B.cx + P.U[0] * b, B.top - B.thick + P.U[1] * b, B.cz + P.U[2] * b];
+    const bot = [prizeHome.x, prizeHome.y + P0.h / 2, prizeHome.z];
+    const n = dyn.bchainN, L = n * 0.0125;
+    const d = Math.hypot(top[0] - bot[0], top[1] - bot[1], top[2] - bot[2]);
+    const sag = d < L ? Math.sqrt(L * L - d * d) * 0.5 : 0;
+    const pts = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const s = Math.sin(Math.PI * t) * sag;
+      pts.push([top[0] + (bot[0] - top[0]) * t + s * 0.6, top[1] + (bot[1] - top[1]) * t, top[2] + (bot[2] - top[2]) * t + s * 0.3]);
+    }
+    for (let i = 0; i < n; i++) placeLink(dyn.bchain, i, pts[i], pts[i + 1], i % 2);
+    dyn.bchain.instanceMatrix.needsUpdate = true;
+  }
+  // 軌跡：リングの中心の最近の道すじ（古い点から順に並べる）
+  if (ui.trail && dt > 0) {
+    const pts = dyn.trailPts; pts.push(r.c[0], r.c[1], r.c[2]);
+    if (pts.length > dyn.trailN * 3) pts.splice(0, pts.length - dyn.trailN * 3);
+    const attr = dyn.trail.geometry.attributes.position;
+    attr.array.set(pts); attr.needsUpdate = true;
+    dyn.trail.geometry.setDrawRange(0, pts.length / 3);
+  }
+}
+
+// 景品が落ちる：板が上がって鎖が引かれ、網の留め具が外れて網が左へ傾き、景品が落とし口へすべる
+// （落ち方の細部は実機で確かめていない。本でも「板が上がると鎖が引っぱられて景品が落ちる」までにしている）
+function updatePrize(dt) {
+  if (!prizeAnim) { netTop.rotation.z += (0 - netTop.rotation.z) * Math.min(1, dt * 3); return; }
+  const a = prizeAnim; a.t += dt;
+  const t = a.t;
+  const k = Math.min(1, Math.max(0, (t - 0.15) / 0.35));
+  const th = 0.32 * (1 - (1 - k) ** 3);
+  netTop.rotation.z = th;
+  const hx = S.cx + S.hx, hy = S.top;
+  if (!a.fall) {
+    const ts = Math.max(0, t - 0.35);
+    const along = S.hx + 0.5 * 2.6 * ts * ts;
+    const lx = -along, ly = P0.h / 2 + 0.004;
+    const c = Math.cos(th), s = Math.sin(th);
+    prize.position.set(hx + lx * c - ly * s, hy + lx * s + ly * c, S.cz);
+    prize.rotation.set(0, 0, th);
+    if (along > 2 * S.hx + P0.w * 0.15) a.fall = { t0: t, x: prize.position.x, y: prize.position.y, vx: -2.6 * ts * c, vy: -2.6 * ts * s };
+  } else {
+    const tf = t - a.fall.t0;
+    prize.position.x = Math.max(I.x0 + P0.w * 0.3, a.fall.x + a.fall.vx * tf);
+    prize.position.y = a.fall.y + a.fall.vy * tf - 0.5 * 9.81 * tf * tf;
+    prize.rotation.z = th + 2.4 * tf;
+    if (prize.position.y < -0.3) {
+      prize.visible = false; prizeAnim = null;
+      trayPrize.visible = true; trayGlow.intensity = 1.6;
+      sfx.thud(0.6);
+    }
+  }
+}
+
+// ------------------------------------------------------------------ 見る位置
+// near と hw は「目標から手前へ near の位置で、左右 hw が画面に入る」という指定。たて長の画面ではその分だけ引く
+const VIEWS = {
+  front: () => ({ pos: [0.0, 0.70, 1.02], tgt: [0.0, 0.60, -0.03], near: 0.25, hw: 0.37 }),
+  side: () => ({ pos: [1.05, 0.70, -0.02], tgt: [0.02, 0.58, -0.02], near: 0.36, hw: 0.31 }),
+  hook: () => { const h = machine.P.hooks[Math.floor(machine.P.hooks.length / 2)].origin; return { pos: [h[0] + 0.22, h[1] + 0.17, h[2] + 0.34], tgt: [h[0] - 0.01, h[1] + 0.05, h[2]], near: 0.05, hw: 0.11 }; },
+  top: () => ({ pos: [0.02, 1.62, 0.03], tgt: [0.02, 0.46, -0.01], near: 0.47, hw: 0.38 }),
+};
+let camTween = null, currentView = 'front', userMoved = false, started = false;
+function fitView(v) {
+  const p = new THREE.Vector3(...v.pos), t = new THREE.Vector3(...v.tgt);
+  const d0 = p.distanceTo(t);
+  const need = v.near + v.hw / (Math.tan(camera.fov * Math.PI / 360) * camera.aspect);
+  if (need > d0) p.sub(t).multiplyScalar(Math.min(need, controls.maxDistance) / d0).add(t);
+  return { p, t };
+}
+function setView(name, instant) {
+  const { p, t } = fitView(VIEWS[name]());
+  currentView = name; userMoved = false;
+  document.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === name)));
+  if (instant) { camTween = null; camera.position.copy(p); controls.target.copy(t); controls.update(); return; }
+  camTween = { t: 0, p0: camera.position.clone(), t0: controls.target.clone(), p1: p, t1: t };
+}
+document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+// 指やマウスで回しはじめたら、自動の動きはやめる
+controls.addEventListener('start', () => { userMoved = true; camTween = null; });
+
+function resize() {
+  const st = $('stage'); const w = st.clientWidth, h = st.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h, false); camera.aspect = w / Math.max(1, h);
+  // 縦長の画面では少し引く
+  camera.fov = camera.aspect < 0.8 ? 60 : camera.aspect < 1.2 ? 52 : 46;
+  camera.updateProjectionMatrix();
+  // 画面の向きや大きさが変わったら、自分で回していないかぎり見る位置を合わせ直す
+  if (started && !userMoved) setView(currentView, true);
+  // 大きさを変えると画面が一度消えるので、次のコマを待たずに描き直す
+  if (started) renderer.render(scene, camera);
+}
+new ResizeObserver(resize).observe($('stage'));
+
+// ------------------------------------------------------------------ 音（すべてその場で合成）
+const sfx = (() => {
+  let ctx = null, master = null, motor = null, motorGain = null, on = true;
+  function wake() { if (ctx && ctx.state !== 'running') { try { const p = ctx.resume(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* 起こせない */ } } }
+  function init() {
+    if (ctx) { wake(); return; }
+    try {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      master = ctx.createGain(); master.gain.value = 0.5; master.connect(ctx.destination);
+      // モーターのうなり
+      motor = ctx.createOscillator(); motor.type = 'sawtooth'; motor.frequency.value = 92;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 380;
+      motorGain = ctx.createGain(); motorGain.gain.value = 0;
+      motor.connect(lp); lp.connect(motorGain); motorGain.connect(master); motor.start();
+    } catch (e) { ctx = null; }
+  }
+  const noise = (dur) => { const b = ctx.createBuffer(1, Math.max(1, ctx.sampleRate * dur), ctx.sampleRate); const d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; const s = ctx.createBufferSource(); s.buffer = b; return s; };
+  function ping(freq, vol, dur) {
+    if (!ctx || !on) return;
+    const t = ctx.currentTime;
+    for (const [m, g] of [[1, 1], [2.76, 0.45], [5.4, 0.2]]) {
+      const o = ctx.createOscillator(); o.frequency.value = freq * m; o.type = 'sine';
+      const gg = ctx.createGain(); gg.gain.setValueAtTime(vol * g, t); gg.gain.exponentialRampToValueAtTime(0.0001, t + dur / m ** 0.3);
+      o.connect(gg); gg.connect(master); o.start(t); o.stop(t + dur + 0.05);
+    }
+  }
+  return {
+    wake,
+    sleep() { if (!ctx) return; if (motorGain) motorGain.gain.value = 0; try { const p = ctx.suspend(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* 止められない */ } },
+    init, set on(v) { on = v; if (motorGain) motorGain.gain.value = 0; }, get on() { return on; },
+    motor(level, pitch) { if (!ctx || !motorGain) return; motorGain.gain.setTargetAtTime(on ? level * 0.12 : 0, ctx.currentTime, 0.04); motor.frequency.setTargetAtTime(pitch, ctx.currentTime, 0.05); },
+    click(v) { ping(2400 + Math.random() * 600, Math.min(0.5, 0.08 + v * 1.2), 0.18); },
+    thud(v) {
+      if (!ctx || !on) return;
+      const t = ctx.currentTime, s = noise(0.12), f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 600;
+      const g = ctx.createGain(); g.gain.setValueAtTime(Math.min(0.6, 0.1 + v), t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+      s.connect(f); f.connect(g); g.connect(master); s.start(t);
+    },
+    coin() { ping(1650, 0.25, 0.25); setTimeout(() => ping(2100, 0.2, 0.3), 70); setTimeout(() => this.thud(0.25), 160); },
+    chime() { if (!ctx || !on) return; [0, 4, 7, 12, 16].forEach((st, i) => setTimeout(() => ping(523.25 * 2 ** (st / 12), 0.22, 0.6), i * 90)); },
+    clank() { ping(780, 0.25, 0.35); this.thud(0.4); },
+  };
+})();
+
+// ------------------------------------------------------------------ 操作
+const ui = { slow: false, trail: false, clock: true };
+function press(n) {
+  const btn = $('btn' + n); if (btn.getAttribute('aria-disabled') === 'true') return;
+  sfx.init(); btn.classList.add('down'); machine.press(n);
+}
+function release(n) { $('btn' + n).classList.remove('down'); machine.release(n); }
+for (const n of [1, 2, 3]) {
+  const b = $('btn' + n);
+  b.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    try { b.setPointerCapture?.(e.pointerId); } catch (err) { /* 捕まえられなくても押せるようにする */ }
+    // 指で押したときだけ、対応している機種では小さくふるわせる
+    if (e.pointerType === 'touch' && b.getAttribute('aria-disabled') !== 'true') { try { navigator.vibrate?.(12); } catch (err) { /* ふるえない機種 */ } }
+    press(n);
+  });
+  b.addEventListener('pointerup', () => release(n));
+  b.addEventListener('pointercancel', () => release(n));
+  b.addEventListener('lostpointercapture', () => release(n));
+  b.addEventListener('contextmenu', (e) => e.preventDefault());
+  b.addEventListener('keydown', (e) => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); press(n); } });
+  b.addEventListener('keyup', (e) => { if (e.key === ' ' || e.key === 'Enter') release(n); });
+}
+const KEYMAP = { '1': 1, 'ArrowRight': 1, '2': 2, 'ArrowUp': 2, '3': 3, 'ArrowDown': 3 };
+window.addEventListener('keydown', (e) => {
+  if (e.target.closest('input, select, textarea')) return;
+  const n = KEYMAP[e.key];
+  if (n) { e.preventDefault(); if (!e.repeat) press(n); return; }
+  if ((e.key === 'c' || e.key === 'C') && !e.repeat) coin(100);
+  if ((e.key === 's' || e.key === 'S') && !e.repeat) toggle('tSlow', 'slow');
+});
+window.addEventListener('keyup', (e) => { const n = KEYMAP[e.key]; if (n) release(n); });
+window.addEventListener('blur', () => { release(1); release(2); release(3); });
+// ほかのアプリやタブへ移ったら、ボタンを離して音を止める。もどったら音を起こす
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { release(1); release(2); release(3); sfx.sleep(); } else sfx.wake();
+});
+for (const ev of ['pointerup', 'touchend', 'click']) window.addEventListener(ev, () => sfx.wake(), { capture: true, passive: true });
+// iPhone で2本指のつまみがページ全体の拡大にならないようにする
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+
+function coin(yen) {
+  sfx.init(); sfx.coin();
+  machine.insert(yen);
+  renderMeters(); persist();
+}
+$('coin100').addEventListener('click', () => coin(100));
+$('coin500').addEventListener('click', () => coin(500));
+function toggle(id, key) {
+  ui[key] = !ui[key]; $(id).setAttribute('aria-pressed', String(ui[key]));
+  if (key === 'trail' && dyn) { dyn.trail.visible = ui.trail; dyn.trailPts.length = 0; }
+  if (key === 'clock') $('clock').hidden = !ui.clock;
+}
+$('tSlow').addEventListener('click', () => toggle('tSlow', 'slow'));
+$('tTrail').addEventListener('click', () => toggle('tTrail', 'trail'));
+$('tClock').addEventListener('click', () => toggle('tClock', 'clock'));
+$('tSound').addEventListener('click', () => { sfx.init(); sfx.on = !sfx.on; $('tSound').setAttribute('aria-pressed', String(sfx.on)); });
+
+// ------------------------------------------------------------------ 右のカード
+function renderMachinePane() {
+  const p = $('pane-machine');
+  const cur = PRESETS.find((x) => x.id === presetId);
+  p.innerHTML = `<h2>どの台で遊ぶ？</h2><p class="lede">本の第6章「形別の攻略」と第8章の練習台をもとにした台です。台を替えると、ノートの記録はそのまま残ります。</p>
+    <div class="presets">${PRESETS.map((x) => `<button type="button" class="preset" data-preset="${x.id}" aria-pressed="${x.id === presetId}"><em>${x.tag}</em><b>${x.name}</b><small>${x.note}</small></button>`).join('')}</div>
+    ${busy() ? '<p class="locked">遊んでいる途中は台を替えられません。もどってくるまで待ってください。</p>' : ''}`;
+  p.querySelectorAll('[data-preset]').forEach((b) => b.addEventListener('click', () => choosePreset(b.dataset.preset)));
+  $('machineName').textContent = cur ? `${cur.name}（${cur.tag}）` : 'カスタムの台';
+}
+function busy() { return !['idle', 'ready'].includes(machine.state); }
+function choosePreset(id) {
+  if (busy()) { renderMachinePane(); return; }
+  const pr = PRESETS.find((x) => x.id === id);
+  presetId = id; secret = !!pr.random;
+  setup = Object.assign({}, DEFAULT_SETUP, pr.random ? randomSetup() : pr.setup);
+  applySetup();
+  sheet(false);   // スマホでは台がすぐ見えるようにシートを閉じる
+}
+function applySetup() {
+  machine.applySetup(setup);
+  machine.events = machine.events.filter((e) => e.type !== 'geometry');
+  buildDynamic(); prize.visible = true; prize.position.copy(prizeHome); prize.rotation.set(0, 0, 0); prizeAnim = null; netTop.rotation.z = 0;
+  $('btn3').hidden = !setup.descentButton;
+  renderMachinePane(); renderSeven(); renderNote(); persist();
+  if (currentView === 'hook') setView('hook');
+}
+function renderSeven() {
+  const p = $('pane-seven');
+  if (secret) {
+    p.innerHTML = `<h2>100円入れる前に見る7つのところ</h2><div class="secret">この台の設定はひみつです。正面と横から、リング・チェーン・フックの向き・板の傾き・どこまで下りるか・機械のくせを見てから遊びましょう。<br><button type="button" id="reveal">答え合わせ（設定を見る）</button></div>`;
+    $('reveal').addEventListener('click', () => { secret = false; persist(); renderSeven(); });
+    return;
+  }
+  let html = `<h2>100円入れる前に見る7つのところ</h2><p class="lede">本の第3章の7項目です。ひとつずつ変えて、どう変わるか確かめられます。</p>`;
+  if (busy()) html += '<p class="locked">遊んでいる途中は変えられません。</p>';
+  for (const f of FIELDS) {
+    if (f.group) html += `<div class="group-title">${f.group}</div>`;
+    html += `<div class="field"><span>${f.label}</span>`;
+    if (f.options) {
+      html += `<div class="seg" role="group" aria-label="${f.label}">${f.options.map(([v, l]) => `<button type="button" data-key="${f.key}" data-val='${JSON.stringify(v)}' aria-pressed="${setup[f.key] === v}">${l}</button>`).join('')}</div>`;
+    } else {
+      const [a, b, st] = f.range, v = setup[f.key];
+      html += `<div class="range"><input type="range" id="rg-${f.key}" data-key="${f.key}" min="${a}" max="${b}" step="${st}" value="${v}"><output>${(v * f.scale).toFixed(0)}${f.unit}</output></div>`;
+    }
+    html += '</div>';
+  }
+  p.innerHTML = html;
+  p.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => {
+    if (busy()) return;
+    setup[b.dataset.key] = JSON.parse(b.dataset.val); presetId = 'custom';
+    if (setup.hookType === 'triple') setup.hookZ = Math.max(-0.04, Math.min(0.04, setup.hookZ));
+    applySetup();
+  }));
+  p.querySelectorAll('input[type=range]').forEach((r) => {
+    const f = FIELDS.find((x) => x.key === r.dataset.key);
+    r.addEventListener('input', () => { r.nextElementSibling.textContent = (r.value * f.scale).toFixed(0) + f.unit; });
+    r.addEventListener('change', () => { if (busy()) return; setup[r.dataset.key] = +r.value; presetId = 'custom'; applySetup(); });
+  });
+}
+// 押した・離した瞬間のゆれ時計の番号。ほとんどゆれていなければ「・」
+function fmtK(k) { return !k ? '—' : k.amp < 0.003 ? '・' : CIRCLED[k.no]; }
+function renderNote() {
+  const p = $('pane-note');
+  const log = machine.log;
+  const per = machine.gets ? Math.round(machine.spent / machine.gets) : null;
+  const price = setup.prizePrice;
+  let warn = '';
+  if (machine.spent >= budget) warn = `<div class="warnline">決めた予算（${budget.toLocaleString()}円）に届きました。本の第7章「やめるのも、技」を思い出しましょう。</div>`;
+  else if (!machine.gets && machine.spent >= price) warn = `<div class="warnline">使った金額が、景品を買う値段（${price.toLocaleString()}円）をこえました。</div>`;
+  let rows = '';
+  for (const r of log.slice(0, 40)) {
+    const land = r.landing ? `${r.landing.open >= 0 ? '開いた側' : '反対側'} ${Math.abs(r.landing.open * 100).toFixed(1)}` : '着かず';
+    rows += `<tr><td>${r.no}</td><td>${r.hold[0].toFixed(2)}秒 ${fmtK(r.pressK[0])}→${fmtK(r.releaseK[0])}</td><td>${r.hold[1].toFixed(2)}秒 ${fmtK(r.pressK[1])}→${fmtK(r.releaseK[1])}</td><td>${land}</td><td class="res"><b class="${RESULT[r.result][1]}">${RESULT[r.result][0]}</b></td></tr>`;
+  }
+  p.innerHTML = `<h2>親子ノート</h2>
+    <div class="summary"><div><small>遊んだ回数</small><b>${log.length}</b></div><div><small>取れた</small><b>${machine.gets}</b></div><div><small>使った金額</small><b>¥${machine.spent.toLocaleString()}</b></div></div>
+    <div class="budget"><label for="budgetIn">きょうの予算</label><input id="budgetIn" type="number" min="100" step="100" value="${budget}"><span>円</span><span class="fine">景品は${price.toLocaleString()}円の想定</span></div>
+    ${warn}
+    ${log.length ? `<div class="log-wrap"><table class="log"><thead><tr><th>回</th><th>①横 押す→離す</th><th>②奥 押す→離す</th><th>着地 cm</th><th>結果</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="fine" style="margin-top:10px">丸数字は、ボタンを押した瞬間と離した瞬間に、リングがゆれ時計のどこにいたかです。「反対に落ちたら半周先の番号へ」「少し足りないなら、となりの番号へ」。変えるのは1回に1つだけ。</p>
+    <button type="button" id="clearLog" class="seg" style="border:1px solid #ddd5c6;background:#fff;border-radius:8px;padding:4px 10px;font-size:12.5px;color:var(--card-ink)">記録と金額を消す</button>`
+    : '<div class="empty">まだ記録がありません。100円を入れて遊ぶと、押した時間とゆれ時計の番号、着地した場所、結果がここに残ります。</div>'}`;
+  $('budgetIn').addEventListener('change', (e) => { budget = Math.max(100, +e.target.value || 1000); persist(); renderNote(); renderMeters(); });
+  const cl = $('clearLog');
+  if (cl) cl.addEventListener('click', () => {
+    if (cl.dataset.confirm !== '1') { cl.dataset.confirm = '1'; cl.textContent = 'もう一度押すと消えます'; return; }
+    machine.log = []; machine.spent = 0; machine.gets = 0; machine.playNo = 0; persist(); renderNote(); renderMeters();
+  });
+}
+document.querySelectorAll('[data-tab]').forEach((t) => t.addEventListener('click', () => {
+  document.querySelectorAll('[data-tab]').forEach((x) => x.setAttribute('aria-selected', String(x === t)));
+  document.querySelectorAll('.pane').forEach((p) => { p.hidden = p.id !== 'pane-' + t.dataset.tab; });
+  if (t.dataset.tab === 'note') renderNote();
+}));
+function sheet(open) { $('side').classList.toggle('open', open); }
+$('openSide').addEventListener('click', () => sheet(true));
+$('closeSide').addEventListener('click', () => sheet(false));
+$('scrim').addEventListener('click', () => sheet(false));
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape') sheet(false); });
+
+function renderMeters() {
+  $('mSpent').innerHTML = `使った金額<b>¥${machine.spent.toLocaleString()}</b>`;
+  $('mSpent').classList.toggle('over', machine.spent >= budget);
+  $('mGets').innerHTML = `取れた<b>${machine.gets}</b>`;
+  $('mPer').innerHTML = `1個あたり<b>${machine.gets ? '¥' + Math.round(machine.spent / machine.gets).toLocaleString() : '—'}</b>`;
+}
+
+// ------------------------------------------------------------------ ゆれ時計（本の第5章）
+const clockSvg = $('clockSvg');
+{
+  const cx = 80, cy = 72, R = 50;
+  let s = `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="#ffb1c855" stroke-width="12"/>`;
+  s += `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="#ffffff22" stroke-width="12" stroke-dasharray="5 5"/>`;
+  s += `<line x1="${cx - 34}" y1="${cy}" x2="${cx + 34}" y2="${cy}" stroke="#ffffff44" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+  s += `<path d="M ${cx + (R + 12) * Math.cos(-1.2)} ${cy + (R + 12) * Math.sin(-1.2)} A ${R + 12} ${R + 12} 0 0 1 ${cx + (R + 12) * Math.cos(-0.5)} ${cy + (R + 12) * Math.sin(-0.5)}" fill="none" stroke="#b3a7bf" stroke-width="2"/>`;
+  for (const [deg, no] of [[0, 1], [45, 2], [90, 3], [180, 4], [225, 5]]) {
+    const a = deg * Math.PI / 180;
+    s += `<g id="ck${no}"><circle cx="${cx + R * Math.cos(a)}" cy="${cy + R * Math.sin(a)}" r="11" fill="#2a2230" stroke="#f5efe6" stroke-width="1.5"/><text x="${cx + R * Math.cos(a)}" y="${cy + R * Math.sin(a) + 4.5}" text-anchor="middle" font-size="12" font-weight="700" fill="#f5efe6" font-family="Zen Kaku Gothic New, sans-serif">${no}</text></g>`;
+  }
+  s += `<circle id="ckDot" cx="${cx + R}" cy="${cy}" r="7" fill="#ffe06a" stroke="#16111b" stroke-width="2"/>`;
+  s += `<text x="${cx}" y="${cy + 4}" text-anchor="middle" font-size="10" fill="#b3a7bf" id="ckAxis">← 左 ・ 右 →</text>`;
+  clockSvg.innerHTML = s;
+}
+// スマホのたて持ちでは、ゆれ時計を操作盤の左へ移す（台の画面をかくさないため）
+const mqPhone = window.matchMedia('(max-width: 540px)');
+function placeClock() {
+  const c = $('clock'), inDeck = mqPhone.matches;
+  if (inDeck) document.querySelector('.deck').prepend(c); else $('stage').insertBefore(c, document.querySelector('.views'));
+  clockSvg.setAttribute('viewBox', inDeck ? '14 8 132 130' : '0 0 160 150');
+}
+if (mqPhone.addEventListener) mqPhone.addEventListener('change', placeClock); else mqPhone.addListener(placeClock);
+placeClock();
+const per = { x: { last: null, t: 0, vals: [] }, z: { last: null, t: 0, vals: [] } };
+let clockAxisShown = 'x';
+function updateClock() {
+  const st = machine.state;
+  let axis = ['ready', 'movex', 'idle'].includes(st) ? 'x' : ['waitz', 'movez'].includes(st) ? 'z' : null;
+  const cx_ = machine.swingClock('x'), cz_ = machine.swingClock('z');
+  if (!axis) axis = cx_.amp >= cz_.amp ? 'x' : 'z';
+  const c = axis === 'x' ? cx_ : cz_;
+  // 周期：ゆれの中心を右から左へ横切る時刻の間隔
+  for (const [k, cc] of [['x', cx_], ['z', cz_]]) {
+    const pp = per[k];
+    if (pp.last !== null && pp.last > 0 && cc.u <= 0 && cc.amp > 0.004) { if (pp.t) pp.vals.push(machine.time - pp.t); pp.t = machine.time; if (pp.vals.length > 4) pp.vals.shift(); }
+    pp.last = cc.u;
+  }
+  const a = c.phi * Math.PI / 180, R = 50;
+  const dot = document.getElementById('ckDot');
+  const still = c.amp < 0.003;
+  dot.setAttribute('cx', (80 + R * Math.cos(a)).toFixed(1)); dot.setAttribute('cy', (72 + R * Math.sin(a)).toFixed(1));
+  dot.setAttribute('opacity', still ? 0.35 : 1);
+  const no = HookMachine.clockLabel(c.phi);
+  for (let i = 1; i <= 5; i++) document.getElementById('ck' + i).firstChild.setAttribute('fill', !still && i === no ? '#ffe06a' : '#2a2230');
+  for (let i = 1; i <= 5; i++) document.getElementById('ck' + i).lastChild.setAttribute('fill', !still && i === no ? '#16111b' : '#f5efe6');
+  if (axis !== clockAxisShown) { clockAxisShown = axis; $('clockTitle').textContent = axis === 'x' ? '横のゆれ' : '前後のゆれ'; document.getElementById('ckAxis').textContent = axis === 'x' ? '← 左 ・ 右 →' : '↑ 奥 ・ 手前 ↓'; }
+  $('clockName').textContent = still ? 'ほぼ止まっている' : CLOCK_NAMES[axis][no];
+  $('clockNo').textContent = still ? '—' : CIRCLED[no];
+  const pv = per[axis].vals; const pm = pv.length ? pv.reduce((s, v) => s + v, 0) / pv.length : null;
+  $('clockPer').textContent = `ゆれ ${(c.amp * 100).toFixed(1)}cm ・ 周期 ${pm ? pm.toFixed(2) + '秒' : '—'}`;
+}
+
+// ------------------------------------------------------------------ 表示の更新
+const STATUS = {
+  idle: '100円を入れてください', ready: '①横ボタンを押してください。押している間だけ右へ動きます', movex: '右へ移動中…離すと止まります',
+  waitz: '②奥ボタンを押してください', movez: '奥へ移動中…離すと下ります', waitdown: '③下降ボタンで下ろします', predesc: 'まもなく下ります',
+  descend: '下降中…', bottom: '着地', ascend: '上昇中…', toppause: '上昇中…', return: 'もどっています', restock: '店員さんが景品を補充して、板を置き直しています…', settling: '',
+};
+let toastTimer = 0;
+function toast(big, small, kind) {
+  const t = $('toast'); $('toastBig').textContent = big; $('toastSmall').textContent = small || '';
+  t.className = 'toast show' + (kind ? ' ' + kind : ''); clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = 'toast' + (kind ? ' ' + kind : ''); }, kind === 'get' ? 3600 : 2600);
+}
+function updateDeck() {
+  const st = machine.state;
+  const lit = { 1: st === 'ready', 2: st === 'waitz', 3: st === 'waitdown' || (st === 'descend' && setup.descentButton) };
+  const enabled = { 1: st === 'ready' || st === 'movex', 2: st === 'waitz' || st === 'movez', 3: lit[3] };
+  for (const n of [1, 2, 3]) {
+    const b = $('btn' + n);
+    b.setAttribute('aria-disabled', String(!enabled[n]));
+    b.classList.toggle('lit', lit[n]);
+    if (!enabled[n]) b.classList.remove('down');
+    const m = btn3D[n]; if (m) m.material.emissiveIntensity = lit[n] || (enabled[n] && b.classList.contains('down')) ? 0.55 : 0.02;
+  }
+  $('credit').textContent = String(Math.min(99, machine.credits + (['idle', 'restock'].includes(st) ? 0 : 0))).padStart(2, '0');
+  let timer = '';
+  if (st === 'ready' || st === 'waitz') timer = `残り ${Math.max(0, Math.ceil(30 - machine.stateT))}秒`;
+  if (st === 'waitdown') timer = `残り ${Math.max(0, Math.ceil(10 - machine.stateT))}秒`;
+  $('timer').textContent = timer || ' ';
+  let s = STATUS[st] ?? '';
+  if (st === 'descend' && setup.descentButton) s = '下降中…もう一度③で止まります';
+  if (st === 'idle' && machine.credits === 0 && machine.log.length) s = '100円を入れると、もう一度遊べます';
+  $('status').textContent = s;
+}
+
+function handleEvents() {
+  for (const e of machine.drainEvents()) {
+    if (e.type === 'win') { sfx.chime(); prizeAnim = { t: 0 }; toast('取れた!!', '板が持ち上がって、景品が落ちます', 'get'); }
+    if (e.type === 'board-drop') sfx.clank();
+    if (e.type === 'restocked') { prize.visible = true; prize.position.copy(prizeHome); prize.rotation.set(0, 0, 0); netTop.rotation.z = 0; trayPrize.visible = false; trayGlow.intensity = 0; }
+    if (e.type === 'geometry' && dyn) buildDynamic();
+    if (e.type === 'result') {
+      const p = e.play; renderMeters(); renderNote(); persist();
+      if (p.result !== 'get') {
+        const land = p.landing ? `着地：フックの${p.landing.open >= 0 ? '開いた側' : '反対側'}へ ${Math.abs(p.landing.open * 100).toFixed(1)}cm` : 'リングは板に着きませんでした';
+        toast(RESULT[p.result][0], land);
+      }
+    }
+    if (e.type === 'state') { renderMachinePane(); if (document.querySelector('[data-tab="seven"][aria-selected="true"]')) renderSeven(); }
+  }
+  // 当たりの音
+  const pk = machine.peak;
+  if (pk.hook > 0.02) sfx.click(pk.hook);
+  if (pk.board > 0.04) sfx.thud(pk.board * 0.8);
+  machine.peak = { hook: 0, board: 0, chain: 0 };
+  // モーター
+  const st = machine.state;
+  const hv = Math.hypot(machine.headV[0], machine.headV[2]);
+  const vert = st === 'descend' || st === 'ascend';
+  sfx.motor(Math.min(1, hv / 0.12) * 0.8 + (vert ? 0.6 : 0), vert ? 70 : 92 + hv * 120);
+}
+
+// ------------------------------------------------------------------ ループ
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  machine.advance(dt * (ui.slow ? 0.3 : 1));
+  handleEvents();
+  syncDynamic(dt * (ui.slow ? 0.3 : 1));
+  if (ui.clock) updateClock();
+  updateDeck();
+  if (trayGlow.intensity > 0) trayGlow.intensity = Math.max(0, trayGlow.intensity - dt * 0.25);
+  if (camTween) {
+    camTween.t = Math.min(1, camTween.t + dt / 0.7);
+    const k = 1 - (1 - camTween.t) ** 3;
+    camera.position.lerpVectors(camTween.p0, camTween.p1, k); controls.target.lerpVectors(camTween.t0, camTween.t1, k);
+    if (camTween.t >= 1) camTween = null;
+  }
+  controls.update();
+  // 天井より上から見るときは、天井と看板を外して中が見えるようにする
+  const above = camera.position.y > 0.99;
+  if (ceil.visible === above) { ceil.visible = sign.visible = signFace.visible = strip.visible = !above; }
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+
+function start(data) {
+  // 公開ページの更新で開き直したときは、遊んでいた記録を引き継ぐ
+  if (data && data.setup) {
+    setup = Object.assign({}, DEFAULT_SETUP, data.setup); presetId = data.preset || presetId; secret = !!data.secret; budget = data.budget || budget;
+    machine.applySetup(setup); machine.events.length = 0;
+    machine.log = data.log || []; machine.spent = data.spent || 0; machine.gets = data.gets || 0;
+    machine.playNo = machine.log.length ? machine.log[0].no : 0;
+  }
+  buildDynamic();
+  $('btn3').hidden = !setup.descentButton;
+  renderMachinePane(); renderSeven(); renderNote(); renderMeters();
+  started = true;
+  resize(); setView('front', true);
+  $('loading').remove();
+  window.__hook = { machine, setView, THREE, scene, camera, renderer, controls, ui };
+  requestAnimationFrame(frame);
+}
+if (hot?.ready) hot.ready((d) => start(d)); else start(hot?.data);
+</script>
+
+</body>
+</html>
