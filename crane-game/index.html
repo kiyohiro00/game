@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#06030f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>クレーンキャッチャー REAL - 3Dクレーンゲーム完全再現</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#06030f; font-family:'Segoe UI','Hiragino Sans','Meiryo',sans-serif; }
+  #app { position:fixed; inset:0; }
+  canvas { display:block; }
+
+  /* ===== Top HUD ===== */
+  #hud-top {
+    position:fixed; top:0; left:0; right:0; z-index:10;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 16px; pointer-events:none;
+    background:linear-gradient(180deg, rgba(5,2,15,.85), transparent);
+  }
+  #title {
+    font-weight:900; font-size:20px; letter-spacing:1px;
+    background:linear-gradient(90deg,#ff5fd2,#ffd15f,#5fd2ff);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    text-shadow:0 0 24px rgba(255,95,210,.35);
+    display:flex; align-items:center; gap:8px;
+  }
+  #title small { font-size:11px; color:#9d8fce; -webkit-text-fill-color:#9d8fce; font-weight:600; letter-spacing:2px; }
+  .stat-group { display:flex; gap:10px; pointer-events:auto; }
+  .stat {
+    background:rgba(20,10,40,.75); border:1px solid rgba(255,95,210,.35);
+    border-radius:10px; padding:6px 14px; color:#fff; text-align:center;
+    box-shadow:0 0 14px rgba(255,95,210,.15), inset 0 0 10px rgba(255,255,255,.03);
+    min-width:86px;
+  }
+  .stat .label { font-size:10px; color:#b9a8e8; letter-spacing:1px; }
+  .stat .value { font-size:20px; font-weight:800; color:#ffe066; text-shadow:0 0 10px rgba(255,224,102,.5); font-variant-numeric:tabular-nums; }
+  .stat.credits .value { color:#7dffa8; text-shadow:0 0 10px rgba(125,255,168,.5); }
+
+  /* ===== Status message ===== */
+  #status {
+    position:fixed; top:64px; left:50%; transform:translateX(-50%); z-index:10;
+    color:#fff; font-weight:700; font-size:15px; letter-spacing:.5px;
+    background:rgba(20,10,40,.7); border:1px solid rgba(95,210,255,.35);
+    padding:7px 22px; border-radius:999px; pointer-events:none;
+    text-shadow:0 0 8px rgba(95,210,255,.6);
+    transition:opacity .3s; white-space:nowrap;
+  }
+
+  /* ===== Control panel ===== */
+  #panel {
+    position:fixed; left:50%; bottom:0; transform:translateX(-50%);
+    z-index:10; display:flex; align-items:flex-end; gap:18px;
+    padding:14px 26px 18px;
+    background:linear-gradient(180deg,#3b1060 0%,#22093c 60%,#160628 100%);
+    border:2px solid #7b3fd0; border-bottom:none;
+    border-radius:22px 22px 0 0;
+    box-shadow:0 -6px 40px rgba(123,63,208,.45), inset 0 2px 0 rgba(255,255,255,.15);
+  }
+  .btn-col { display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .btn-label { color:#cbb8f5; font-size:11px; font-weight:700; letter-spacing:1px; text-align:center; }
+  .kbd { font-size:9px; color:#8f7cc0; }
+
+  .coin-btn {
+    width:88px; height:56px; border-radius:12px; border:none; cursor:pointer;
+    background:linear-gradient(180deg,#ffe066,#f5a623 55%,#c77d10);
+    box-shadow:0 5px 0 #8a5606, 0 8px 16px rgba(0,0,0,.5), inset 0 2px 2px rgba(255,255,255,.6);
+    color:#5a3403; font-weight:900; font-size:15px; letter-spacing:.5px;
+    transition:transform .05s, box-shadow .05s;
+  }
+  .coin-btn:active { transform:translateY(4px); box-shadow:0 1px 0 #8a5606, 0 3px 8px rgba(0,0,0,.5); }
+
+  .big-btn {
+    width:84px; height:84px; border-radius:50%; border:none; cursor:pointer;
+    color:#fff; font-weight:900; font-size:15px; line-height:1.25;
+    transition:transform .05s, box-shadow .05s, filter .2s;
+    user-select:none; touch-action:none;
+  }
+  .big-btn:disabled { filter:grayscale(.85) brightness(.55); cursor:default; }
+  #btn1 {
+    background:radial-gradient(circle at 32% 28%, #ff9d9d, #ff2d55 45%, #b30f31);
+    box-shadow:0 7px 0 #7c0a22, 0 12px 22px rgba(255,45,85,.45), inset 0 3px 5px rgba(255,255,255,.55);
+  }
+  #btn2 {
+    background:radial-gradient(circle at 32% 28%, #9dc4ff, #2d7bff 45%, #0f3fb3);
+    box-shadow:0 7px 0 #0a2a7c, 0 12px 22px rgba(45,123,255,.45), inset 0 3px 5px rgba(255,255,255,.55);
+  }
+  .big-btn.pressed, .big-btn:not(:disabled):active { transform:translateY(6px); }
+  #btn1.pressed, #btn1:not(:disabled):active { box-shadow:0 1px 0 #7c0a22, 0 4px 10px rgba(255,45,85,.45), inset 0 3px 5px rgba(255,255,255,.4); }
+  #btn2.pressed, #btn2:not(:disabled):active { box-shadow:0 1px 0 #0a2a7c, 0 4px 10px rgba(45,123,255,.45), inset 0 3px 5px rgba(255,255,255,.4); }
+  .big-btn small { display:block; font-size:10px; font-weight:700; opacity:.9; }
+
+  /* ===== Side buttons ===== */
+  #side-ui {
+    position:fixed; right:12px; bottom:16px; z-index:10;
+    display:flex; flex-direction:column; gap:8px;
+  }
+  .mini-btn {
+    background:rgba(20,10,40,.8); border:1px solid rgba(157,143,206,.5);
+    color:#cbb8f5; border-radius:9px; padding:8px 12px; cursor:pointer;
+    font-size:12px; font-weight:700; letter-spacing:.5px;
+    transition:background .15s, color .15s;
+  }
+  .mini-btn:hover { background:rgba(123,63,208,.5); color:#fff; }
+
+  /* ===== Win overlay ===== */
+  #win-banner {
+    position:fixed; inset:0; z-index:20; display:none;
+    align-items:center; justify-content:center; flex-direction:column;
+    pointer-events:none;
+  }
+  #win-banner.show { display:flex; animation:winpop .5s cubic-bezier(.2,1.6,.4,1); }
+  #win-banner .big {
+    font-size:64px; font-weight:900; letter-spacing:4px;
+    background:linear-gradient(90deg,#ffd15f,#ff5fd2,#5fd2ff,#ffd15f);
+    background-size:300% 100%;
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    animation:winshine 1.6s linear infinite;
+    filter:drop-shadow(0 0 22px rgba(255,209,95,.7));
+  }
+  #win-banner .sub { color:#fff; font-size:22px; font-weight:800; margin-top:8px; text-shadow:0 0 16px rgba(255,95,210,.8); }
+  @keyframes winpop { 0%{transform:scale(.3);opacity:0} 100%{transform:scale(1);opacity:1} }
+  @keyframes winshine { 0%{background-position:0% 0} 100%{background-position:300% 0} }
+
+  /* ===== Boot overlay ===== */
+  #boot {
+    position:fixed; inset:0; z-index:30; background:radial-gradient(ellipse at center,#1c0b38 0%,#06030f 75%);
+    display:flex; align-items:center; justify-content:center; flex-direction:column; gap:22px;
+    transition:opacity .6s;
+  }
+  #boot h1 {
+    font-size:42px; font-weight:900; letter-spacing:3px; text-align:center; line-height:1.3;
+    background:linear-gradient(90deg,#ff5fd2,#ffd15f,#5fd2ff);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 0 28px rgba(255,95,210,.5));
+  }
+  #boot h1 small { display:block; font-size:14px; letter-spacing:6px; color:#9d8fce; -webkit-text-fill-color:#9d8fce; }
+  #boot p { color:#b9a8e8; font-size:13px; line-height:1.9; text-align:center; }
+  #start-btn {
+    padding:16px 60px; font-size:20px; font-weight:900; letter-spacing:2px; cursor:pointer;
+    border:none; border-radius:999px; color:#3d1060;
+    background:linear-gradient(180deg,#fff,#ffd15f);
+    box-shadow:0 0 34px rgba(255,209,95,.6), 0 6px 0 #b8860b;
+    transition:transform .1s;
+    animation:pulse 1.4s ease-in-out infinite;
+  }
+  #start-btn:active { transform:translateY(5px); }
+  @keyframes pulse { 0%,100%{filter:brightness(1)} 50%{filter:brightness(1.2)} }
+
+  /* ===== タッチ端末共通 ===== */
+  html, body { height:100dvh; overscroll-behavior:none; touch-action:none; }
+  button, #panel, #hud-top, #status, #side-ui { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  #panel { padding-bottom:calc(18px + env(safe-area-inset-bottom)); }
+  #boot { padding:20px; overflow:auto; }
+
+  @media (max-width:640px) {
+    #title { font-size:15px; }
+    #title small { display:none; }
+    #hud-top { padding:8px 10px; padding-top:calc(8px + env(safe-area-inset-top)); }
+    .stat { min-width:58px; padding:3px 8px; }
+    .stat .value { font-size:17px; }
+    .stat .label { font-size:9px; }
+    #status { top:calc(58px + env(safe-area-inset-top)); font-size:12px; padding:6px 14px; white-space:normal; text-align:center; width:max-content; max-width:92vw; }
+    .big-btn { width:88px; height:88px; font-size:15px; }
+    .coin-btn { width:76px; height:56px; font-size:14px; }
+    .kbd { display:none; }
+    #panel { gap:14px; padding:12px 16px calc(14px + env(safe-area-inset-bottom)); width:100%; justify-content:center; border-radius:18px 18px 0 0; border-left:none; border-right:none; }
+    #side-ui { left:0; right:0; top:auto; bottom:calc(124px + env(safe-area-inset-bottom)); flex-direction:row; flex-wrap:wrap; justify-content:center; gap:5px; padding:0 6px; }
+    .mini-btn { padding:6px 8px; font-size:10.5px; white-space:nowrap; }
+    #win-banner .big { font-size:44px; }
+    #win-banner .sub { font-size:17px; }
+    #boot h1 { font-size:27px; letter-spacing:1px; }
+    #boot h1 small { font-size:11px; letter-spacing:3px; }
+    #boot p { font-size:12px; line-height:1.75; }
+    #boot p br { display:none; }
+    #start-btn { padding:14px 44px; font-size:18px; }
+  }
+  /* 横向きスマホ（高さが低い） */
+  @media (max-height:480px) and (orientation:landscape) {
+    #title small { display:none; }
+    #status { top:8px; font-size:12px; padding:5px 14px; }
+    #panel { left:auto; right:0; transform:none; flex-direction:column; align-items:center; gap:8px; padding:10px 12px; top:50%; bottom:auto; translate:0 -50%; border-radius:18px 0 0 18px; border:2px solid #7b3fd0; border-right:none; }
+    .big-btn { width:68px; height:68px; font-size:13px; }
+    .coin-btn { width:68px; height:44px; font-size:12px; }
+    .kbd { display:none; }
+    #side-ui { right:auto; left:8px; bottom:8px; }
+    .mini-btn { padding:6px 8px; font-size:11px; }
+    #boot { gap:10px; }
+    #boot h1 { font-size:24px; }
+    #boot p { font-size:11px; line-height:1.5; }
+  }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./lib/three.module.js",
+    "three/addons/controls/OrbitControls.js": "./lib/OrbitControls.js",
+    "three/addons/environments/RoomEnvironment.js": "./lib/RoomEnvironment.js",
+    "cannon-es": "./lib/cannon-es.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="hud-top">
+  <div id="title">🕹️ クレーンキャッチャー <small>REAL EDITION</small></div>
+  <div class="stat-group">
+    <div class="stat credits"><div class="label">CREDIT</div><div class="value" id="credit-num">0</div></div>
+    <div class="stat"><div class="label">獲得数</div><div class="value" id="prize-num">0</div></div>
+  </div>
+</div>
+
+<div id="status">コインを入れてスタート！</div>
+
+<div id="panel">
+  <div class="btn-col">
+    <button class="coin-btn" id="coin-btn">¥100<br>投入</button>
+    <div class="btn-label kbd">[C]キー</div>
+  </div>
+  <div class="btn-col">
+    <button class="big-btn" id="btn1" disabled>① ヨコ<small>おしっぱなし</small></button>
+    <div class="btn-label kbd">[←→ / Space]</div>
+  </div>
+  <div class="btn-col">
+    <button class="big-btn" id="btn2" disabled>② タテ<small>おしっぱなし</small></button>
+    <div class="btn-label kbd">[↑↓ / Space]</div>
+  </div>
+</div>
+
+<div id="side-ui">
+  <button class="mini-btn" id="mode-btn" style="border-color:#ffd15f;color:#ffe08a;">⚙ 通常設定 ▸ フック設定へ</button>
+  <button class="mini-btn" id="cam-front">📷 正面</button>
+  <button class="mini-btn" id="cam-side">📷 ヨコ見</button>
+  <button class="mini-btn" id="cam-top">📷 ナナメ上</button>
+  <button class="mini-btn" id="mute-btn">🔊 サウンド</button>
+</div>
+
+<div id="win-banner">
+  <div class="big">GET!!</div>
+  <div class="sub">🎉 獲得おめでとう！ 🎉</div>
+</div>
+
+<div id="boot">
+  <h1>クレーンキャッチャー<small>— REAL ARCADE EDITION —</small></h1>
+  <p>
+    実機さながらの2ボタン操作！<br>
+    ①ボタン長押しでヨコ移動 → ②ボタン長押しでタテ移動 → アームが自動で降下！<br>
+    右下の⚙ボタンで「フック設定」に切替可能。フック設定ではクレーンが<b>わっか付きクレーン</b>に変身！<br>
+    台の上の<b>金属フックにわっかを引っかける</b>と、ひもで繋がった棚の景品が引き落とされてGET！<br>
+    ドラッグ（スマホは指1本でスワイプ・2本でズーム）で視点をぐるぐる回せます。
+  </p>
+  <button id="start-btn">▶ ゲームスタート</button>
+</div>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>

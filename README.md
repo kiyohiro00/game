@@ -8,6 +8,7 @@
 |---|---|---|
 | 蒼焔戦記 | ファイアーエムブレム風の戦略シミュレーションRPG（全2章） | `souen/` |
 | COMET TAIL — ルミと星の王冠 | キツネが主人公の横スクロールアクション（全4ステージ＋ボス、スマホのタッチ操作対応） | `comet-tail/` |
+| クレーンキャッチャー REAL | 3D・物理演算のクレーンゲーム（通常設定／フック設定、スマホのタッチ操作対応） | `crane-game/` |
 
 公開URL: https://kiyohiro00.github.io/game/
 
@@ -18,6 +19,7 @@ index.html          作品一覧のトップページ
 souen/index.html    蒼焔戦記（ビルド済み。これがそのまま公開される）
 souen/src/          蒼焔戦記のソース（js/, assets/, build.py）
 comet-tail/         COMET TAIL（index.html と js/ がそのまま公開される。ビルド不要）
+crane-game/         クレーンキャッチャー REAL（index.html・main.js・lib/ がそのまま公開される。ビルド不要）
 ```
 
 ## 作品を追加するには
