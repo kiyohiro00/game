@@ -67,7 +67,7 @@ void main(){
   // 風：地面近くは弱く、上ほど強い
   vn.x += uDt*uWind*smoothstep(0.04, 1.3, y);
   // 小さな乱れ（カールノイズ）。熱いところだけ
-  vec2 q = vUv*uSize*9.0 + vec2(0.0, -uTime*1.7);
+  vec2 q = vUv*uSize*14.0 + vec2(0.0, -uTime*2.3);
   float e = 0.05;
   float n1 = vnoise(q+vec2(0.0,e)) - vnoise(q-vec2(0.0,e));
   float n2 = vnoise(q+vec2(e,0.0)) - vnoise(q-vec2(e,0.0));
@@ -168,7 +168,9 @@ void main(){
   vec4 src = texture(uSource, vUv);
   vec2 p = vUv*uSize;
   // 発生源のむら：ガスの噴き出しは一様ではない
-  float fl = 0.45 + 1.1*vnoise(vec2(p.x*34.0 + uTime*2.3, p.y*34.0 - uTime*5.1));
+  // 噴き出しは場所ごとに息をする：数センチ幅の「舌」が現れては消える
+  float colm = vnoise(vec2(p.x*23.0 + 2.5*vnoise(vec2(uTime*0.55, p.x*3.0)), uTime*1.6));
+  float fl = 0.12 + 2.5*colm*colm + 0.5*vnoise(vec2(p.x*60.0 + uTime*3.0, p.y*40.0 - uTime*6.0));
   float T = d.r, F = d.g, S = d.b;
   F += src.r*uDt*fl;
   T += src.g*uDt;
@@ -244,8 +246,8 @@ export class FireFluid {
     });
     this.mAdvVel = mat(ADVECT_VEL_FRAG, {
       uVel: { value: null }, uDye: { value: null }, uInvSize: { value: inv }, uSize: { value: size },
-      uDt: { value: 0 }, uDamp: { value: 1.1 }, uBuoy: { value: 7.5 }, uSmokeW: { value: 0.25 },
-      uWind: { value: 0 }, uTime: { value: 0 }, uGround: { value: ground }, uTurb: { value: 1.6 },
+      uDt: { value: 0 }, uDamp: { value: 0.9 }, uBuoy: { value: 8.0 }, uSmokeW: { value: 0.25 },
+      uWind: { value: 0 }, uTime: { value: 0 }, uGround: { value: ground }, uTurb: { value: 2.3 },
     });
     this.mCurl = mat(CURL_FRAG, { uVel: { value: null }, uTexel: { value: texel } });
     this.mVort = mat(VORT_FRAG, {
@@ -263,7 +265,7 @@ export class FireFluid {
     this.mAdvDye = mat(ADVECT_DYE_FRAG, {
       uVel: { value: null }, uDye: { value: null }, uSource: { value: null },
       uInvSize: { value: inv }, uSize: { value: size }, uDt: { value: 0 }, uTime: { value: 0 }, uGround: { value: ground },
-      uBurn: { value: 2.4 }, uHeat: { value: 3.1 }, uSoot: { value: 0.05 },
+      uBurn: { value: 2.8 }, uHeat: { value: 2.65 }, uSoot: { value: 0.05 },
       uCoolLin: { value: 0.75 }, uCoolCub: { value: 5.6 }, uFuelDecay: { value: 0.5 }, uSmokeDecay: { value: 0.22 },
     });
 
@@ -399,18 +401,20 @@ void main(){
   vec4 d = texture2D(uDye, vUv + off*warp/uSize*2.4);
   float T = d.r;
   // 発光：温度のしきい値から立ち上がる
-  float e = smoothstep(0.30, 1.32, T);
-  float e2 = e*e*(0.55 + 0.45*e);
-  // 黒体放射ふう：暗赤 → 橙 → 黄白
-  vec3 c = mix(vec3(1.0, 0.13, 0.012), vec3(1.0, 0.36, 0.055), smoothstep(0.0, 0.42, e));
-  c = mix(c, vec3(1.0, 0.57, 0.16), smoothstep(0.38, 0.95, e));
-  // 縦に流れる筋と、未燃ガスの濃い芯（根元）は暗い。炎は薄い膜として光る
-  float streak = 0.5 + 0.85*n1 + 0.45*(n2 - 0.44);
+  float e = smoothstep(0.34, 1.30, T);
+  float e2 = e*e*(0.5 + 0.5*e);
+  // 黒体放射ふう：暗赤 → 橙 → 黄。芯だけがわずかに白む
+  vec3 c = mix(vec3(1.0, 0.11, 0.008), vec3(1.0, 0.33, 0.04), smoothstep(0.0, 0.40, e));
+  c = mix(c, vec3(1.0, 0.56, 0.13), smoothstep(0.35, 0.85, e));
+  c = mix(c, vec3(1.0, 0.70, 0.30), smoothstep(0.88, 1.0, e));
+  // 縦に流れる筋と、未燃ガスの濃い芯（根元）は暗い。炎は薄い膜として光り、ところどころ向こうが透ける
+  float streak = 0.34 + 1.15*n1 + 0.5*(n2 - 0.44);
+  streak *= smoothstep(0.16, 0.42, n1 + 0.35*e);
   float core = 1.0 - 0.72*smoothstep(0.10, 0.75, d.g);
   vec3 emis = c*e2*uGain*streak*core;
   // 根元の青い炎（未燃ガスが多く、煤がまだ光っていない所）
   float blue = smoothstep(0.05, 0.5, d.g)*smoothstep(0.22, 0.6, T)*(1.0 - 0.6*e);
-  emis += vec3(0.03, 0.09, 0.30)*blue*uGain*0.10;
+  emis += vec3(0.03, 0.09, 0.30)*blue*uGain*0.045;
   // 煙：火に下から照らされる
   float sm = 1.0 - exp(-d.b*uSmokeDensity*(0.75 + 0.6*n1));
   sm *= 1.0 - smoothstep(0.25, 0.7, e);

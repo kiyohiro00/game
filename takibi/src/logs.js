@@ -119,31 +119,33 @@ function kindlingGeometry(shape) {
   for (let k = 0; k < n; k++) { const a = Math.PI*2*k/n + (rng() - 0.5)*0.5; const r = 0.75 + rng()*0.35; pts.push([Math.cos(a)*r, Math.sin(a)*r]); }
   const sides = [];
   for (let k = 0; k < n; k++) sides.push({ pts: [pts[k].slice(), pts[(k + 1) % n].slice()], bark: rng() < 0.2 ? 1 : 0 });
-  return buildSolid(normalizeSides(sides), rng, 8, 0.12);
+  normalizeSides(sides);
+  const flat = 0.5 + rng()*0.3;   // 鉈で割った薄い木っ端
+  for (const sd of sides) for (const q of sd.pts) q[1] *= flat;
+  return buildSolid(sides, rng, 8, 0.10);
 }
 
 function tinderGeometry(shape) {
-  // 麻ひもをほぐした鳥の巣状のかたまり：細いリボンをたくさん束ねる
+  // フェザースティックの削り屑：くるりと巻いた薄い木のリボンを丸めたかたまり
   const rng = mulberry(shape);
   const pos = [], nor = [], bark = [], cap = [], uv = [], idx = [];
-  const strands = 150;
-  for (let s = 0; s < strands; s++) {
-    const pts = [];
-    let a = rng()*6.28, b = Math.acos(2*rng() - 1), r = 0.25 + 0.75*Math.pow(rng(), 0.5);
-    for (let k = 0; k < 6; k++) {
-      a += (rng() - 0.5)*1.5; b += (rng() - 0.5)*1.0; r = Math.min(1, Math.max(0.15, r + (rng() - 0.5)*0.3));
-      pts.push(new THREE.Vector3(Math.cos(b)*0.5*r, Math.sin(b)*Math.cos(a)*r*0.8, Math.sin(b)*Math.sin(a)*r));
-    }
-    const curve = new THREE.CatmullRomCurve3(pts);
-    const wdt = 0.018 + rng()*0.02;
-    const side = new THREE.Vector3(rng() - 0.5, rng() - 0.5, rng() - 0.5).normalize();
-    const base = pos.length/3, seg = 10, tone = rng();
+  const curls = 64;
+  const A = new THREE.Vector3(), U = new THREE.Vector3(), W = new THREE.Vector3(), P = new THREE.Vector3(), N = new THREE.Vector3(), C = new THREE.Vector3();
+  for (let s = 0; s < curls; s++) {
+    const a = rng()*6.283, b = Math.acos(2*rng() - 1), rr = 0.75*Math.pow(rng(), 0.6);
+    C.set(Math.cos(b)*0.36*rr, Math.sin(b)*Math.cos(a)*rr*0.62 - 0.08, Math.sin(b)*Math.sin(a)*rr*0.8);
+    A.set(rng() - 0.5, rng() - 0.5, rng() - 0.5).normalize();
+    U.set(rng() - 0.5, rng() - 0.5, rng() - 0.5).cross(A).normalize(); W.crossVectors(A, U);
+    const rad = 0.10 + rng()*0.20, turns = 1.2 + rng()*2.2, pitch = (rng() - 0.3)*0.16, wdt = 0.07 + rng()*0.09;
+    const seg = Math.ceil(turns*10), base = pos.length/3, tone = rng();
     for (let k = 0; k <= seg; k++) {
-      const p = curve.getPoint(k/seg);
-      const n = p.clone().multiply(new THREE.Vector3(2, 1.2, 1)).normalize();
+      const t = k/seg, ang = t*turns*6.283, r = rad*(1 - 0.35*t);
+      N.copy(U).multiplyScalar(Math.cos(ang)).addScaledVector(W, Math.sin(ang));
+      P.copy(C).addScaledVector(N, r).addScaledVector(A, pitch*t*turns);
+      P.x *= 0.5;   // 長さ方向（x）は ±0.5 に収める
       for (const sg of [-1, 1]) {
-        pos.push(p.x + side.x*wdt*sg*0.5, p.y + side.y*wdt*sg, p.z + side.z*wdt*sg);
-        nor.push(n.x, n.y, n.z); bark.push(tone); cap.push(0); uv.push(k/seg, sg*0.5 + 0.5);
+        pos.push(P.x + A.x*wdt*sg*0.5, P.y + A.y*wdt*sg, P.z + A.z*wdt*sg);
+        nor.push(N.x, N.y, N.z); bark.push(tone); cap.push(0); uv.push(t, sg*0.5 + 0.5);
       }
     }
     for (let k = 0; k < seg; k++) { const q = base + k*2; idx.push(q, q + 1, q + 2, q + 1, q + 3, q + 2); }
@@ -178,13 +180,13 @@ float wn3(vec3 p){
 }
 float wfbm(vec3 p){ float a = 0.5, s = 0.0; for (int i = 0; i < 4; i++){ s += a*wn3(p); p = p*2.02 + vec3(3.1, 1.7, 5.3); a *= 0.5; } return s; }
 // 3次元ボロノイ：x=最近点までの距離, y=境界までの近さ, z=セルの乱数
-vec3 wvoro(vec3 p){
+vec3 wvoro(vec3 p, float jit){
   vec3 i = floor(p), f = fract(p);
   float d1 = 9.0, d2 = 9.0, id = 0.0;
   for (int x = -1; x <= 1; x++) for (int y = -1; y <= 1; y++) for (int z = -1; z <= 1; z++){
     vec3 g = vec3(float(x), float(y), float(z));
     vec3 c = i + g;
-    vec3 o = vec3(wh31(c), wh31(c + 17.3), wh31(c + 41.7));
+    vec3 o = 0.5 + jit*(vec3(wh31(c), wh31(c + 17.3), wh31(c + 41.7)) - 0.5);
     vec3 r = g + o - f;
     float d = dot(r, r);
     if (d < d1){ d2 = d1; d1 = d; id = wh31(c + 7.7); } else if (d < d2) d2 = d;
@@ -234,8 +236,8 @@ const FRAG_COLOR = /* glsl */`
   float fiber = wfbm(vec3(P.x*7.0, P.y*210.0, P.z*210.0));
   if (uKind > 1.5) {
     // 火口（麻・枯れ草）
-    alb = mix(vec3(0.36, 0.25, 0.11), vec3(0.62, 0.50, 0.27), vBark);
-    alb *= 0.75 + 0.5*wn3(P*400.0);
+    alb = mix(vec3(0.50, 0.36, 0.19), vec3(0.80, 0.66, 0.44), vBark);
+    alb *= 0.8 + 0.4*wn3(P*vec3(60.0, 400.0, 400.0));
     rough = 0.95;
   } else if (vCap > 0.5) {
     // 木口：年輪と放射状の干割れ
@@ -274,17 +276,25 @@ const FRAG_COLOR = /* glsl */`
   float toast = smoothstep(0.0, 0.5, ch*1.5 - cn*0.5);
   float black = smoothstep(0.25, 0.75, ch*1.7 - cn*0.75);
   alb = mix(alb, alb*vec3(0.34, 0.2, 0.1), toast);
-  alb = mix(alb, vec3(0.011, 0.010, 0.010), black);
+  alb = mix(alb, vec3(0.034, 0.031, 0.030), black);
   // 亀甲状の割れ（ワニ皮状炭化）
-  vec3 vo = wvoro(P*vec3(58.0, 95.0, 95.0));
-  float crack = 1.0 - smoothstep(0.0, 0.11, vo.y);
-  float plate = smoothstep(0.0, 0.25, vo.y);
-  bump = mix(bump, plate*2.2 + vo.z*0.6, black);
-  rough = mix(rough, 0.55 + 0.25*vo.z, black);
+  // 太い薪ほど大きく四角く割れる（実物は2〜3cm角の升目になる）
+  float cs = uKind < 0.5 ? 1.0 : 1.9;
+  vec3 Pw = P + 0.006*vec3(wn3(P*55.0), wn3(P*55.0 + 11.0), wn3(P*55.0 + 23.0));   // 割れ目をまっすぐにしない
+  vec3 vo = wvoro(Pw*vec3(40.0, 64.0, 64.0)*cs, 0.7);
+  vec3 vo2 = wvoro(Pw*vec3(95.0, 150.0, 150.0)*cs, 1.0);                              // 升目の中の細かなひび
+  float crack = max(1.0 - smoothstep(0.0, 0.15, vo.y), 0.45*(1.0 - smoothstep(0.0, 0.10, vo2.y)));
+  float plate = smoothstep(0.0, 0.13, vo.y)*(0.8 + 0.2*smoothstep(0.0, 0.1, vo2.y));  // 升目の上面は平ら
+  bump = mix(bump, plate*3.4 + vo.z*0.8, black);
+  rough = mix(rough, 0.5 + 0.3*vo.z, black);
+  alb *= 1.0 - 0.78*crack*black;
   // 赤熱：割れ目から光り、熾になると面全体が光る
   float pulse = 0.62 + 0.38*wn3(vec3(P.xy*36.0, P.z*36.0 + uTime*0.55)) + 0.12*sin(uTime*7.0 + vo.z*40.0);
   float hc = heat*black;
-  float gl = hc*(crack*1.3 + plate*smoothstep(0.45, 1.1, heat + vo.z*0.35)*0.9 + 0.08)*pulse;
+  float deep = 1.0 - smoothstep(0.0, 0.07, vo.y);    // 赤く見えるのは割れ目の底だけ
+  // 炎が上がっているあいだは、熱のこもる所の割れ目だけが赤い。熾になると全体が光る
+  float where = smoothstep(0.62 - heat*0.75, 0.86 - heat*0.75, wfbm(P*vec3(7.0, 16.0, 16.0) + 3.0));
+  float gl = hc*(deep*1.5*where + plate*smoothstep(0.45, 1.1, heat + vo.z*0.35)*0.9 + 0.03)*pulse;
   if (uKind > 1.5) gl = heat*black*pulse*1.4;
   vec3 hot = mix(vec3(1.0, 0.06, 0.0), vec3(1.0, 0.36, 0.05), smoothstep(0.2, 1.0, gl));
   hot = mix(hot, vec3(1.0, 0.62, 0.22), smoothstep(1.1, 2.2, gl));
@@ -427,8 +437,8 @@ export function makeEmberBed() {
           vec3 alb = mix(soil, ashc, smoothstep(0.2, 0.8, ashAmt + n*0.5 - 0.25));
           // 熾：ボロノイの塊ごとに温度が違う
           // 大小ふた回りの塊。塊ごとに温度が違い、上面は灰をかぶり、すき間が強く光る
-          vec3 vo = wvoro(vec3(vXZ*34.0 + 0.6*vec2(wn3(P*60.0), wn3(P*60.0 + 7.0)), 3.0));
-          vec3 vs = wvoro(vec3(vXZ*88.0, 9.0));
+          vec3 vo = wvoro(vec3(vXZ*34.0 + 0.6*vec2(wn3(P*60.0), wn3(P*60.0 + 7.0)), 3.0), 1.0);
+          vec3 vs = wvoro(vec3(vXZ*88.0, 9.0), 1.0);
           float cov = clamp(uCoal*2.4, 0.0, 1.0)*exp(-r*r/0.05);
           float isCoal = smoothstep(0.35, 0.6, cov + vo.z*0.45 - 0.2);
           float seam = 1.0 - smoothstep(0.0, 0.20, vo.y);
@@ -463,4 +473,99 @@ export function makeEmberBed() {
   mesh.renderOrder = 1;
   mesh.userData.u = u;
   return mesh;
+}
+
+// ───────── 熾の塊 ─────────
+// 燃え崩れた薪は、ごろりとした炭の塊になって熾床に残る。奥のすき間ほど強く光り、上面は灰をかぶる。
+export class EmberChunks {
+  constructor(scene, max = 110) {
+    this.max = max;
+    const g = new THREE.IcosahedronGeometry(1, 2);
+    const p = g.attributes.position;
+    const h = (x, y, z) => { const v = Math.sin(x*12.9898 + y*78.233 + z*37.719)*43758.5453; return v - Math.floor(v); };
+    for (let k = 0; k < p.count; k++) {
+      const x = p.getX(k), y = p.getY(k), z = p.getZ(k);
+      const s = 0.72 + 0.5*h(Math.round(x*2.2), Math.round(y*2.2), Math.round(z*2.2));   // 面ごとに削いだ、角ばった塊
+      p.setXYZ(k, x*s*1.25, y*s*0.8, z*s);
+    }
+    g.computeVertexNormals();
+    // 面の角を残しつつ、丸みのある陰影にする
+    const nr = g.attributes.normal;
+    for (let k = 0; k < p.count; k++) {
+      const l = Math.hypot(p.getX(k), p.getY(k), p.getZ(k)) || 1;
+      const nx = nr.getX(k)*0.4 + p.getX(k)/l*0.6, ny = nr.getY(k)*0.4 + p.getY(k)/l*0.6, nz = nr.getZ(k)*0.4 + p.getZ(k)/l*0.6, nl = Math.hypot(nx, ny, nz);
+      nr.setXYZ(k, nx/nl, ny/nl, nz/nl);
+    }
+    this.heat = new Float32Array(max); this.seed = new Float32Array(max);
+    g.setAttribute('aHeat', new THREE.InstancedBufferAttribute(this.heat, 1).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('aSeed', new THREE.InstancedBufferAttribute(this.seed, 1).setUsage(THREE.DynamicDrawUsage));
+    const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, metalness: 0 });
+    m.onBeforeCompile = (sh) => {
+      sh.uniforms.uTime = timeU;
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float aHeat; attribute float aSeed; varying float vHeat; varying float vSeed; varying vec3 vLoc; varying float vUpN;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvHeat = aHeat; vSeed = aSeed; vLoc = position;\n#ifdef USE_INSTANCING\nvUpN = normalize(mat3(instanceMatrix)*normal).y;\n#else\nvUpN = normal.y;\n#endif');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>
+          uniform float uTime; varying float vHeat; varying float vSeed; varying vec3 vLoc; varying float vUpN; vec3 cEmis;
+          ${GLSL_NOISE}`)
+        .replace('#include <color_fragment>', `#include <color_fragment>
+          {
+            vec3 P = vLoc*2.4 + vSeed*31.0;
+            float n = wfbm(P), n2 = wn3(P*5.0);
+            float pulse = 0.6 + 0.4*wn3(vec3(P.xy*0.8, uTime*0.45 + vSeed*7.0));
+            // 上面は灰、下や側面のすき間ほど熱がこもって明るい
+            float ash = smoothstep(0.1, 0.75, vUpN + 0.5*n - 0.25)*(1.0 - 0.6*smoothstep(0.7, 1.5, vHeat));
+            float gl = vHeat*pulse*(0.35 + 0.95*(1.0 - max(vUpN, 0.0)))*(1.0 - 0.72*ash)*(0.6 + 0.8*n);
+            vec3 hot = mix(vec3(1.0, 0.045, 0.0), vec3(1.0, 0.30, 0.04), smoothstep(0.1, 0.8, gl));
+            hot = mix(hot, vec3(1.0, 0.52, 0.14), smoothstep(1.4, 2.8, gl));
+            cEmis = hot*gl*gl*2.3;
+            diffuseColor.rgb = mix(vec3(0.03, 0.028, 0.027)*(0.6 + 0.8*n2), vec3(0.085, 0.082, 0.08), ash*0.8);
+          }`)
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += cEmis;');
+    };
+    this.mesh = new THREE.InstancedMesh(g, m, max);
+    this.mesh.count = 0; this.mesh.frustumCulled = false; this.mesh.castShadow = true; this.mesh.receiveShadow = true;
+    scene.add(this.mesh);
+    this.items = [];
+    this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._s = new THREE.Vector3(); this._p = new THREE.Vector3(); this._e = new THREE.Euler();
+  }
+  spawn(x, y, z, size, hearth, count = 0) {
+    const n = count || 2 + Math.floor(Math.random()*3);
+    for (let i = 0; i < n; i++) {
+      if (this.items.length >= this.max) this.items.shift();
+      const a = Math.random()*6.283, d = Math.random()*0.07;
+      const px = x + Math.cos(a)*d, pz = z + Math.sin(a)*d;
+      const s = size*(0.55 + Math.random()*0.7);
+      this.items.push({ x: px, z: pz, dy: Math.max(0, y - hearth.groundY(px, pz)), s, s0: s, rx: Math.random()*6.283, ry: Math.random()*6.283, rz: Math.random()*6.283, k: 0.6 + Math.random()*0.8, seed: Math.random()*100, heat: 1.2, vy: 0 });
+    }
+  }
+  kick(x, z, r) {   // つつかれた塊は少し転がる
+    for (const c of this.items) {
+      const d = Math.hypot(c.x - x, c.z - z);
+      if (d < r) { c.rx += (Math.random() - 0.5)*1.5; c.rz += (Math.random() - 0.5)*1.5; c.x += (c.x - x)*0.25 + (Math.random() - 0.5)*0.012; c.z += (c.z - z)*0.25 + (Math.random() - 0.5)*0.012; c.heat = Math.min(2, c.heat + 0.5); }
+    }
+  }
+  update(dt, hearth, blow) {
+    const E = hearth.bed.E, burn = hearth.bed.burn*hearth.pace;
+    let n = 0;
+    for (let i = 0; i < this.items.length; i++) {
+      const c = this.items[i];
+      if (c.dy > 0) { c.vy += 9.8*dt; c.dy = Math.max(0, c.dy - c.vy*dt); }   // 落ちて熾床にのる
+      c.s -= dt*burn*c.s0*0.0045*c.k;                                          // 熾床が燃えているあいだ、少しずつ痩せる
+      if (c.s < c.s0*0.3) { this.items.splice(i--, 1); continue; }
+      const near = Math.exp(-(c.x*c.x + c.z*c.z)/0.07);
+      const tgt = E*(0.45 + 0.75*c.k)*(0.35 + 0.65*near)*(1 + 0.9*blow);
+      c.heat += (tgt - c.heat)*Math.min(1, dt*(tgt > c.heat ? 2.5 : 0.25));
+      this.heat[n] = c.heat; this.seed[n] = c.seed;
+      this._e.set(c.rx, c.ry, c.rz); this._q.setFromEuler(this._e);
+      this._m.compose(this._p.set(c.x, hearth.groundY(c.x, c.z) + c.dy + c.s*0.42, c.z), this._q, this._s.set(c.s, c.s, c.s));
+      this.mesh.setMatrixAt(n, this._m);
+      n++;
+    }
+    this.mesh.count = n;
+    this.mesh.instanceMatrix.needsUpdate = true;
+    this.mesh.geometry.attributes.aHeat.needsUpdate = true;
+    this.mesh.geometry.attributes.aSeed.needsUpdate = true;
+  }
 }

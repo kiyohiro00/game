@@ -137,9 +137,9 @@ export class Hearth {
     const R = this.rng;
     let L, r, thick, w0;
     if (kind === 'tinder') { L = 0.10; r = 0.042; thick = 0.003; w0 = 0.01; }
-    else if (kind === 'kindling') { L = 0.25 + R()*0.09; r = 0.006 + R()*0.003; thick = r; w0 = 0.04; }
-    else { L = 0.33 + R()*0.07; r = 0.033 + R()*0.014; thick = r; w0 = R() < 0.12 ? 0.42 : 0.10 + R()*0.1; }
-    if (opts.L) L = opts.L; if (opts.r) { r = opts.r; if (kind !== 'tinder') thick = r; }
+    else if (kind === 'kindling') { L = 0.24 + R()*0.10; r = 0.007 + R()*0.004; thick = r*0.8; w0 = 0.04; }
+    else { L = 0.36 + R()*0.08; r = 0.040 + R()*0.018; thick = r*0.9; w0 = R() < 0.12 ? 0.42 : 0.10 + R()*0.1; }
+    if (opts.L) L = opts.L; if (opts.r) { r = opts.r; if (kind !== 'tinder') thick = r*(kind === 'log' ? 0.9 : 0.8); }
     if (opts.w0 !== undefined) w0 = opts.w0;
     const p = new Piece(kind, center, dir, L, r, thick, w0, R);
     if (opts.shape !== undefined) p.shape = opts.shape;
@@ -151,6 +151,27 @@ export class Hearth {
   removePiece(p) {
     const i = this.pieces.indexOf(p);
     if (i >= 0) { this.pieces.splice(i, 1); this.version++; }
+  }
+
+  // 火ばさみで熾をつつく：灰が落ちて空気が入り、いっとき赤く熾る
+  poke(x, y, z, power = 1) {
+    const b = this.bed, r2 = x*x + z*z;
+    const hot = b.E > 0.08 || b.T > 300;
+    if (r2 < 0.16 && b.coal > 0.02) {
+      b.T = Math.min(1000, b.T + (hot ? 70 : 0)*power);
+      b.stir = Math.min(1.5, (b.stir || 0) + 0.7*power);
+    }
+    for (const p of this.pieces) {
+      const t = Math.max(0, Math.min(1, ((x - p.p0.x)*(p.p1.x - p.p0.x) + (y - p.p0.y)*(p.p1.y - p.p0.y) + (z - p.p0.z)*(p.p1.z - p.p0.z))/(p.L*p.L)));
+      const cx = p.p0.x + (p.p1.x - p.p0.x)*t, cy = p.p0.y + (p.p1.y - p.p0.y)*t, cz = p.p0.z + (p.p1.z - p.p0.z)*t;
+      const d = Math.hypot(cx - x, cy - y, cz - z);
+      if (d > p.rc + 0.05) continue;
+      // 小さく突き動かす
+      const k = 0.004*power*Math.min(1, p.w*0.6), nx = (cx - x)/(d + 1e-4), nz = (cz - z)/(d + 1e-4);
+      p.p0.x += nx*k*(1 - t); p.p0.z += nz*k*(1 - t); p.p1.x += nx*k*t; p.p1.z += nz*k*t;
+      for (let i = 0; i < NODES; i++) if (p.glow[i] > 0.1) { p.T[i] = Math.min(1050, p.T[i] + 40); p.ash[i] *= 0.5; }
+    }
+    this.events.push({ type: 'poke', x, y, z, power, hot: hot && b.coal > 0.02 });
   }
 
   // ───────── 物理 ─────────
@@ -458,7 +479,8 @@ export class Hearth {
     // 熾床
     {
       const Meff = Math.min(1, bed.coal/0.3);
-      const ox = 0.75 + 1.5*blowBed + 0.2*windA;
+      bed.stir = Math.max(0, (bed.stir || 0) - dt*0.5);
+      const ox = 0.75 + 1.5*blowBed + 0.2*windA + 0.6*bed.stir;
       bed.burn = Meff*sstep(380, 620, bed.T)*ox;
       const qin = 1.3*bed.burn*Meff + Math.min(0.7, 0.3*totFlame);
       bed.T += dt/40*(1 + 5*blowBed)*(qin*900 - (1 + 0.3*blowBed)*(bed.T - TA));   // 息を吹くと反応が速まる
@@ -466,7 +488,7 @@ export class Hearth {
       const used = dt*pace*bed.burn*KM;
       bed.coal = Math.max(0, bed.coal - used);
       bed.ash += used*0.6;
-      bed.E = Meff*sstep(350, 700, bed.T)*(1 + 0.8*blowBed);
+      bed.E = Meff*sstep(350, 700, bed.T)*(1 + 0.8*blowBed + 0.5*bed.stir);
       if (bed.E > 0.2 && R() < bed.E*(0.25 + 2.5*blowBed)*dt) {
         const an = R()*Math.PI*2, rr = Math.sqrt(R())*0.22;
         this.events.push({ type: blowBed > 0.3 ? 'spark' : 'crackle', x: Math.cos(an)*rr, y: bedTop + 0.01, z: Math.sin(an)*rr, power: 0.2 + 0.3*R() });
